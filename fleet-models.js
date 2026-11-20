@@ -1,5 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {nearestRail} from './metro-world.js?v=rail-network';
+import {fleetProducts} from './fleet.js?v=fleet-variants';
 
 const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,12,8), tire=new T.CylinderGeometry(.43,.43,.22,14);
 function shape(g,geo,color,x,y,z,w,h,d){
@@ -39,7 +40,140 @@ export function makeExtraModels(w){
     const o=box(w.aircraft.mesh,'#96b6ba',x,.28,.07,.48,.32,3.27);o.visible=false;extras.set(x,o);
     const leg=box(w.aircraft.mesh,'#98aeae',x,.67,0,.12,.62,.16);leg.visible=false;extras.set(x*2,leg);
   }
-  return {rider,shoal,floats:extras};
+  const fleetModels={};
+  for(const [id,p] of Object.entries(fleetProducts)){
+    const model=p.family==='bus'||p.family==='taxi'?makeRoadServiceVehicle(p):
+      p.family==='ferry'?makeFerryVariant(p.variant):
+      (p.kind==='boat'?w.life.craft[p.chassis]:p.kind==='rail'?w.arch.train.front:w.aircraft.mesh).clone(true);
+    addVariantKit(model,p);
+    const back=p.kind==='rail'?w.arch.train.back.clone(true):null;
+    model.visible=false;if(back)back.visible=false;
+    w.scene.add(model);if(back)w.scene.add(back);
+    fleetModels[id]={model,back,kind:p.kind};
+  }
+  return {rider,shoal,floats:extras,fleetModels};
+}
+function makeRoadServiceVehicle(p){
+  const g=new T.Group(),isBus=p.family==='bus',variant=p.variant;
+  const body=isBus?'#8dc69e':'#e7c56e',glass='#b8e4d7',length=isBus?[7.2,8.5,7.7][variant]:[4.3,4.7,5.1][variant];
+  if(isBus){
+    const height=variant===1?2.45:2.08;
+    box(g,body,0,1.20,0,2.7,height,length);
+    box(g,'#344e5b',0,1.20+height*.52,0,2.55,.16,length-.12);
+    for(let z=-length*.34;z<=length*.34;z+=length*.22)for(const x of [-1.37,1.37])box(g,glass,x,1.47,z,.08,.72,1.10);
+    box(g,'#526e7b',0,1.5,-length*.5,2.34,.9,.09);
+    for(const z of [-length*.31,length*.31])for(const x of [-1.18,1.18])wheel(g,x,z);
+    if(variant===1){
+      box(g,'#d7c58c',0,2.82,-.12,2.22,.19,1.75);
+      box(g,'#405866',0,2.93,-.12,1.82,.05,1.44);
+    }else if(variant===2){
+      for(const x of [-1,1])box(g,'#496773',x*1.43,.67,0,.22,.38,length*.68);
+      box(g,'#55727b',0,2.35,length*.34,.16,.28,.55);
+    }else{
+      box(g,'#f1d28d',0,.86,-length*.5-.08,1.08,.24,.14);
+      box(g,'#f6e1a3',0,2.48,0,.14,.12,.65);
+    }
+  }else{
+    const width=variant===2?2.12:1.88,height=variant===1?1.52:1.32;
+    box(g,body,0,.68,0,width,.62,length);
+    box(g,'#d9e2d7',0,1.22,-.13,width*.82,height*.57,length*.52);
+    box(g,'#3b5865',0,1.22,-length*.39,width*.77,.46,.07);
+    box(g,'#3b5865',0,1.22,length*.39,width*.77,.46,.07);
+    for(const x of [-width*.48,width*.48]){
+      box(g,'#ffe9a8',x,.72,-length*.5,.1,.23,.12);
+      box(g,'#c54f4e',x,.72,length*.5,.1,.23,.12);
+    }
+    for(const z of [-length*.31,length*.31])for(const x of [-width*.49,width*.49])wheel(g,x,z);
+    if(variant===0){
+      box(g,'#fff0af',0,1.79,-.03,.72,.14,.32);
+      box(g,'#435967',0,1.70,-.03,.58,.035,.15);
+    }else if(variant===1){
+      box(g,'#d6bd78',0,1.76,.04,1.1,.12,.62);
+      box(g,'#3b5865',0,1.22,0,width*.62,.04,length*.30);
+    }else{
+      box(g,'#c9d1c5',0,1.53,.1,width*.88,.12,1.32);
+      box(g,'#fff0af',0,1.75,-.08,.5,.14,.24);
+    }
+  }
+  return g;
+}
+function wheel(g,x,z){
+  const m=shape(g,tire,'#28323b',x,.38,z,.96,.96,.96);m.rotation.z=Math.PI/2;
+  const rim=shape(g,tire,'#9babb0',x,.38,z,.42,.42,.98);rim.rotation.z=Math.PI/2;
+}
+function makeFerryVariant(variant){
+  const g=new T.Group(),hullColor=['#397783','#477b84','#597987'][variant];
+  const hullAt=(x,z,w,l)=>box(g,hullColor,x,.22,z,w,.52,l);
+  const deck=(x,z,w,l)=>box(g,'#e6dec9',x,.54,z,w,.12,l);
+  if(variant===0){
+    for(const x of [-1.8,1.8]){hullAt(x,0,1.25,10);deck(x,0,1.35,9.3)}
+    box(g,'#a5d9d4',0,1.38,-.6,3.15,1.48,5.2);
+    box(g,'#e7e2d3',0,2.18,-.6,3.3,.16,5.35);
+    for(const x of [-1.18,1.18])for(let z=-2.2;z<1.6;z+=1.2)box(g,'#315263',x,1.53,z,.08,.72,.76);
+    box(g,'#bfaa82',0,.88,3.3,2.75,.28,1.25);
+  }else if(variant===1){
+    hullAt(0,0,2.45,11);deck(0,0,2.55,10.2);
+    box(g,'#86cdd0',0,1.35,-.7,2.5,1.35,4.4);
+    box(g,'#e5e0d1',0,2.1,-.7,2.65,.16,4.55);
+    for(const x of [-1.55,1.55]){
+      box(g,'#c7b27c',x,.17,.55,.18,.16,6.8);
+      box(g,'#99c9ce',x,.04,.55,.13,.12,6.4);
+    }
+    box(g,'#d1b680',0,.04,-1.1,3.55,.12,.18);
+  }else{
+    hullAt(0,0,1.7,10);
+    for(const x of [-2.5,2.5]){hullAt(x,.7,.72,7.4);box(g,'#d8c99b',x,.57,.7,.82,.1,7.2)}
+    deck(0,0,1.84,9.2);
+    box(g,'#8dc7cc',0,1.24,-.65,1.95,1.13,3.8);
+    box(g,'#e6dfce',0,1.84,-.65,2.08,.14,3.94);
+    for(const x of [-.68,.68])for(let z=-1.85;z<.8;z+=1.05)box(g,'#365864',x,1.34,z,.07,.55,.62);
+    box(g,'#d5bb87',0,.83,3,1.45,.2,.9);
+  }
+  for(const x of [-1.12,1.12])box(g,'#f3d795',x,.75,-4.75,.18,.16,.28);
+  return g;
+}
+function addVariantKit(g,p){
+  const color=p.color,boxKit=(x,y,z,w,h,d)=>box(g,color,x,y,z,w,h,d);
+  if(p.family==='bus'||p.family==='taxi')return;
+  if(p.kind==='road'){
+    if(p.variant===0){
+      boxKit(-.72,1.18,1.72,.16,.12,.38);boxKit(.72,1.18,1.72,.16,.12,.38);
+      boxKit(0,1.30,1.80,1.72,.12,.14);
+    }else if(p.variant===1){
+      boxKit(-1.06,.57,0,.16,.2,2.35);boxKit(1.06,.57,0,.16,.2,2.35);
+    }else{
+      boxKit(-1.16,1.07,-.38,.14,.24,1.06);boxKit(1.16,1.07,-.38,.14,.24,1.06);
+      boxKit(0,1.72,.15,.68,.13,.18);
+    }
+  }else if(p.family==='ferry'){
+    if(p.variant===0){
+      for(const x of [-1,1])boxKit(x*2.15,.42,.7,1.05,.14,1.45);
+    }else if(p.variant===1){
+      for(const x of [-1,1])boxKit(x*1.65,.04,.32,.18,.2,2.6);
+      boxKit(0,.27,-.82,3.9,.13,.2);
+    }else{
+      boxKit(0,2.4,-.2,.12,1.7,.12);boxKit(0,3.05,-.2,.95,.12,.12);
+      boxKit(-1.45,.62,1.2,.85,.16,.55);boxKit(1.45,.62,1.2,.85,.16,.55);
+    }
+  }else if(p.kind==='air'){
+    if(p.variant===0)boxKit(0,3.1,-1.8,.22,.46,.48);
+    else if(p.variant===1){boxKit(-5,.14,.25,.58,.3,1.25);boxKit(5,.14,.25,.58,.3,1.25)}
+    else{boxKit(-2.2,.58,2,.52,.56,.65);boxKit(2.2,.58,2,.52,.56,.65)}
+  }else if(p.kind==='rail'){
+    if(p.variant===0){boxKit(0,3.35,-.25,.18,.62,.2);boxKit(0,3.63,-.25,1.05,.1,.2)}
+    else if(p.variant===1){boxKit(-1.62,.24,-3.3,.12,.22,.85);boxKit(1.62,.24,-3.3,.12,.22,.85)}
+    else{boxKit(0,3.3,.9,.72,.13,.25);boxKit(0,3.42,.9,.14,.4,.14)}
+  }else if(p.kind==='boat'){
+    if(p.variant===0){
+      for(const x of [-1,1])boxKit(x*2.15,.42,.7,1.05,.14,1.45);
+    }else if(p.variant===1){
+      for(const x of [-1,1])boxKit(x*1.65,.04,.32,.18,.2,2.6);
+      boxKit(0,.27,-.82,3.9,.13,.2);
+    }else{
+      boxKit(0,2.4,-.2,.12,1.7,.12);boxKit(0,3.05,-.2,.95,.12,.12);
+      boxKit(-1.45,.62,1.2,.85,.16,.55);boxKit(1.45,.62,1.2,.85,.16,.55);
+    }
+  }
 }
 const palette=new Map();
 export function vehiclePaint(g,color){

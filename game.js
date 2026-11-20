@@ -3,12 +3,12 @@ import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} fr
 import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=streets';
 import {createSocial} from './social.js?v=connections';
-import {createMobility} from './mobility.js?v=rail-network';
+import {createMobility} from './mobility.js?v=fleet-variants';
 import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=rail-network';
 import {makeTerminal,venueFor} from './terminal-world.js?v=streets';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
-import {fleetProducts} from './fleet.js?v=streets';
-import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=terminal';
+import {fleetProducts} from './fleet.js?v=fleet-variants';
+import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=fleet-variants';
 import {createCombat} from './combat.js?v=streets';
 
 const $=id=>document.getElementById(id), viewport=$('viewport');
@@ -26,7 +26,7 @@ const waterCameras=['Chase Cam','Bow Cam','Overhead'];
 const fleet=['car','plane','walk','sport','van','boat','yacht','train','jet','gravity','hydro',...Object.keys(fleetProducts)];
 const vehicleName={car:'Roadster',plane:'Trainer',walk:'On Foot',sport:'Sport Coupe',van:'Utility Van',boat:'Speedboat',yacht:'Yacht',train:'Railcar',jet:'Jet Roadster',gravity:'Gravity Coupe',hydro:'Skylift'};
 const boatParking={boat:[...parking.boat],yacht:[...parking.yacht],hydro:[48,64,0]};
-const prototypeIds=fleet.slice(8),variant=id=>fleetProducts[id],modelOf=id=>variant(id)?.model??id;
+const prototypeIds=fleet.slice(8),variant=id=>fleetProducts[id],modelOf=id=>variant(id)?.chassis??id;
 const isAir=id=>id==='plane'||variant(id)?.kind==='air',isSea=id=>['boat','yacht','hydro'].includes(id)||variant(id)?.kind==='boat';
 const isRail=id=>id==='train'||variant(id)?.kind==='rail';
 const ability=(...ids)=>state.ability>0&&ids.includes(variant(state.vehicle)?.ability);
@@ -71,7 +71,7 @@ const social=createSocial(state,()=>{if(state.dialogue)clearKeys();refresh()},()
 const worldPosition=()=>groundPosition??[state.x,state.z];
 const districtAt=(x,z)=>{const island=islandAt(x,z);return island?[island.tag,island.name]:highwayAt(x,z)&&x>31?['PACIFICA ARCHIPELAGO','Channel Expressway']:districtFor(x,z)};
 const mobility=createMobility({state,social,refresh,clearKeys,position:worldPosition,focus:()=>focusView(false),snap:()=>{snap=true},
-  sync:syncSelection, sound:playChime,startRide,ridePosition,endRide,hit:solidHit,isIndoor:()=>!!indoor,isWalking:walking,isRoadVehicle:motoring,isFlying:flying,isBoating:boating,isRail:rail,
+  sync:syncSelection, sound:playChime,startRide,ridePosition,endRide,driveTransitVehicle,hit:solidHit,isIndoor:()=>!!indoor,isWalking:walking,isRoadVehicle:motoring,isFlying:flying,isBoating:boating,isRail:rail,
   venue:()=>indoor?.zone?indoor:null,enterVenue,leaveVenue,goRunway,
   wardActions:p=>combat.wardActions(p),expose:p=>combat.expose(p),aid:p=>combat.aid(p)});
 const combat=createCombat({state,walking,actors:combatActors,scene:()=>indoor?.scene??world?.scene,
@@ -225,6 +225,16 @@ function begin(){
   resetCar();state.checkpoint=0;state.time=state.mode==='delivery'?65:0;state.elapsed=0;state.hits=0;state.phase='running';
   $('result').hidden=true;document.body.classList.add('playing');syncSelection();
   focusView();refresh();
+}
+function driveTransitVehicle(id,stop,destination){
+  if(!variant(id)||!state.owned.includes(id))return false;
+  const heading=Math.atan2(destination.x-stop.x,stop.z-destination.z);
+  const x=variant(id).kind==='boat'?(stop.region==='main'?43:222):stop.x;
+  const [px,pz,yaw]=swapLocation(id,x,stop.z,heading,'walk');
+  mobility.close(false);lastMount=null;state.vehicle=id;state.mode='roam';state.phase='running';state.camera=0;
+  state.checkpoint=0;state.time=0;state.hits=0;resetCar([px,pz,yaw]);
+  document.body.classList.add('playing');syncSelection();focusView();refresh();
+  return true;
 }
 function startRide(){
   leaveInterior(true);social.close(false);clearKeys();lastMount=null;mobility.resetCockpit();
@@ -570,7 +580,7 @@ function special(){
   if(!prototypeIds.includes(state.vehicle)||state.phase!=='running'||mobility.ride()||mobility.panel())return;
   if(state.abilityCool>0){social.notice('Prototype is still recharging.');return}
   const p=variant(state.vehicle),special=p?.ability;
-  state.ability=p?({floats:24,deep:14,dive:9,glide:9,steady:10,hold:7,short:12}[special]??5.2):state.vehicle==='jet'?2.6:state.vehicle==='gravity'?4.8:5.7;
+  state.ability=p?({floats:24,deep:14,dive:9,glide:9,steady:10,hold:7,short:12,'ferryfoil':7,'ferry-stabilize':8,'current-anchor':7,'bus-turbo':5.5,'taxi-sprint':5.5}[special]??5.2):state.vehicle==='jet'?2.6:state.vehicle==='gravity'?4.8:5.7;
   state.abilityCool=state.ability+6;
   if(special==='scan'||special==='station'){
     const type=special==='scan'?'ferry':'rail';
@@ -580,14 +590,16 @@ function special(){
   playChime(180);social.notice(p?p.info.replace(' Press H to activate.',''):state.vehicle==='jet'?'Jet boost':state.vehicle==='gravity'?'Gravity field active':'Skylift foils raised');
 }
 function updateBoat(dt){
-  const p=variant(state.vehicle),racing=modelOf(state.vehicle)!=='yacht',sub=modelOf(state.vehicle)==='sub',forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),brake=action('Space')||ability('hold');
+  const p=variant(state.vehicle),racing=modelOf(state.vehicle)!=='yacht',sub=modelOf(state.vehicle)==='sub',forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),
+    anchored=ability('current-anchor'),brake=action('Space')||ability('hold')||anchored;
   const steer=mobility.assist()?0:Number(action('KeyD','ArrowRight'))-Number(action('KeyA','ArrowLeft'));
-  const dv=brake?-Math.sign(state.speed)*(ability('hold')?25:17):forward?(racing?8.9:4.55)*(p?.power??1)*(ability('skim')?1.65:1):reverse?(state.speed>0?-9:-2.3):0;
+  const dv=brake?-Math.sign(state.speed)*(anchored?32:ability('hold')?25:17):forward?(racing?8.9:4.55)*(p?.power??1)*(ability('skim')?1.65:1)*(ability('ferryfoil')?1.24:1):reverse?(state.speed>0?-9:-2.3):0;
   state.speed+=dv*dt;
   if(brake&&Math.abs(state.speed)<.32)state.speed=0;
-  state.speed*=Math.max(0,1-(racing?.23:.25)*dt);
-  state.speed=minmax(state.speed,racing?-4.5:-3.4,(racing?31:14.5)*(p?.power??1)*(ability('skim')?1.18:1));
-  state.heading=(state.heading+steer*(racing?1.33:.66)*(p?.steer??1)*(ability('rudder')?1.75:1)*Math.min(1,Math.abs(state.speed)/(ability('rudder')?2.2:4.2))*Math.sign(state.speed)*dt)%(Math.PI*2);
+  state.speed*=Math.max(0,1-(racing?.23:.25)*dt-(ability('ferry-stabilize')?.16:0)*dt);
+  state.speed=minmax(state.speed,racing?-4.5:-3.4,(racing?31:14.5)*(p?.power??1)*(ability('skim')?1.18:1)*(ability('ferryfoil')?1.32:1));
+  const rudder=ability('rudder')?1.75:ability('dock-rudder')?1.85*(1-Math.min(.62,Math.abs(state.speed)/30)):ability('ferry-turn')?1.82:1;
+  state.heading=(state.heading+steer*(racing?1.33:.66)*(p?.steer??1)*rudder*Math.min(1,Math.abs(state.speed)/(ability('rudder')?2.2:ability('dock-rudder')?2.8:4.2))*Math.sign(state.speed)*dt)%(Math.PI*2);
   state.depth=sub?state.depth+((ability('deep')?7:ability('dive')?3.1:0)-state.depth)*Math.min(1,dt*1.7):0;
   state.steer+=(steer-state.steer)*dt*5.8;
   const x=state.x+Math.sin(state.heading)*state.speed*dt,z=state.z-Math.cos(state.heading)*state.speed*dt;
@@ -596,8 +608,9 @@ function updateBoat(dt){
   else{state.speed*=-.31;if(state.hit===0){state.hit=.80;social.notice('Shallow water or dock ahead.')}}
 }
 function updateTrain(dt){
-  const p=variant(state.vehicle),forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),brake=action('Space')||ability('regen');
-  const force=brake?-Math.sign(state.speed)*(ability('regen')?34:22):forward?(state.speed<0?12:7.7)*(p?.power??1)*(ability('rail-sprint')?1.9:ability('climb')&&state.railY<-1?1.65:1):reverse?(state.speed>.15?-12:-4):0;
+  const p=variant(state.vehicle),forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),
+    metroRegen=ability('metro-regen'),brake=action('Space')||ability('regen')||metroRegen&&!forward;
+  const force=brake?-Math.sign(state.speed)*(ability('regen')?34:metroRegen?29:22):forward?(state.speed<0?12:7.7)*(p?.power??1)*(ability('rail-sprint')?1.9:ability('climb')&&state.railY<-1?1.65:1):reverse?(state.speed>.15?-12:-4):0;
   const raw=state.speed+force*dt;
   state.speed=brake&&Math.sign(raw)!==Math.sign(state.speed)?0:minmax(raw*(1-dt*.095),ability('shunt')?-3:-14,ability('shunt')?8:39*(p?.power??1)*(ability('rail-sprint')?1.19:1));
   state.track=minmax(state.track+state.speed*dt,0,railLength);
@@ -631,17 +644,26 @@ function update(dt){
     state.time=Math.max(0,state.time-dt);
     if(state.time<=0){complete(false);return}
   }
-  const accelerating=action('KeyW','ArrowUp'),braking=action('KeyS','ArrowDown'),drift=action('Space')||ability('slip');
+  const accelerating=action('KeyW','ArrowUp'),braking=action('KeyS','ArrowDown'),
+    drift=action('Space')||ability('slip')||ability('race-drift')||ability('taxi-drift');
   const steer=Number(action('KeyD','ArrowRight'))-Number(action('KeyA','ArrowLeft'));
   const onRoad=roadSurface(state.x,state.z);
-  const mod=variant(state.vehicle),ratio=(mod?.power??(state.vehicle==='sport'||state.vehicle==='gravity'?1.23:state.vehicle==='van'?.72:1))*(state.vehicle==='jet'&&state.ability>0?1.60:1);
-  state.speed=core.longitudinal(state.speed/ratio,+accelerating,+braking,+action('Space'),onRoad||ability('grip')?1:.56,dt*(state.vehicle==='van'?.86:1))*ratio;
+  const mod=variant(state.vehicle),roughGrip=['terrain-lock','scrambler-grip','sand-skim','bus-allterrain'].some(id=>ability(id)),
+    taxiBoost=ability('taxi-sprint')&&accelerating,busBoost=ability('bus-turbo')&&accelerating&&onRoad&&Math.abs(steer)<.22,
+    cornerBoost=accelerating&&(ability('passing-burst')&&Math.abs(steer)>.18||ability('corner-launch')&&Math.abs(steer)<.42&&Math.abs(state.steer)>.32),
+    ratio=(mod?.power??(state.vehicle==='sport'||state.vehicle==='gravity'?1.23:state.vehicle==='van'?.72:1))*
+      (state.vehicle==='jet'&&state.ability>0?1.60:1)*(taxiBoost?1.24:1)*(busBoost?1.18:1)*(cornerBoost?1.20:1);
+  state.speed=core.longitudinal(state.speed/ratio,+accelerating,+braking,+action('Space'),onRoad||ability('grip')||roughGrip?1:.56,dt*(state.vehicle==='van'?.86:1))*ratio;
   if(ability('launch')&&accelerating&&state.speed<12)state.speed+=dt*8;
   if(ability('anchor')&&braking&&state.speed>0)state.speed=Math.max(0,state.speed-dt*14);
+  if(ability('bus-airbrake')&&(braking||action('Space'))&&state.speed>0)state.speed=Math.max(0,state.speed-dt*19);
+  if(ability('rescue-brake')&&(braking||action('Space'))&&state.speed>0)state.speed=Math.max(0,state.speed-dt*12);
   if(state.vehicle==='jet'&&state.ability>0&&!braking&&!drift)state.speed=Math.min(67,state.speed+dt*15);
-  state.heading=(state.heading+core.yaw_rate(state.speed,steer,+drift)*dt*(mod?.steer??(state.vehicle==='van'?.70:state.vehicle==='sport'?1.12:1))*(ability('bank')?1.40:1))%(Math.PI*2);
+  const turnBoost=ability('cornering')?1.28:ability('taxi-evasion')?1.25:ability('bank')?1.40:1;
+  state.heading=(state.heading+core.yaw_rate(state.speed,steer,+drift)*dt*(mod?.steer??(state.vehicle==='van'?.70:state.vehicle==='sport'?1.12:1))*turnBoost*
+    (ability('race-drift')&&drift?1.18:ability('taxi-drift')&&drift?1.32:1))%(Math.PI*2);
   state.steer+=(steer-state.steer)*Math.min(1,dt*10);
-  const traction=Math.min(1,core.grip(state.speed,+drift,dt)*(ability('grip')?1.55:1));
+  const traction=Math.min(1,core.grip(state.speed,+drift,dt)*(ability('grip')?1.55:roughGrip?1.42:ability('cornering')&&steer?1.18:1));
   state.vx+=(Math.sin(state.heading)*state.speed-state.vx)*traction;
   state.vz+=(-Math.cos(state.heading)*state.speed-state.vz)*traction;
   const oldX=state.x,oldZ=state.z,x=state.x+state.vx*dt,z=state.z+state.vz*dt,impactSpeed=Math.hypot(state.vx,state.vz);
@@ -650,12 +672,13 @@ function update(dt){
     if(!invalid(x,state.z))state.x=x;
     if(!invalid(state.x,z))state.z=z;
     if(Math.abs(state.speed)>2.5&&state.hit===0){state.hits++;state.hit=.72;const other=trafficAt(x,z);if(other)mobility.collision(other,Math.abs(state.speed),accelerating)}
-    state.speed*=ability('buffer')?0:-.24;state.vx*=.16;state.vz*=.16;
+    state.speed*=ability('buffer')?0:ability('impact-cushion')?-.08:ability('taxi-evasion')?-.14:-.24;state.vx*=.16;state.vz*=.16;
   }
   if(!indoor&&!(state.vehicle==='gravity'&&state.ability>0)){
     const along=Math.sign(state.speed||1)*(modelOf(state.vehicle)==='bike'?.80:1.32),dx=Math.sin(state.heading)*along,dz=-Math.cos(state.heading)*along;
     if(combat.vehicle(oldX+dx,oldZ+dz,state.x+dx,state.z+dz,impactSpeed,modelOf(state.vehicle)==='bike'?.77:1.20)){
-      state.speed*=.78;state.vx*=.78;state.vz*=.78;
+      const impactFactor=ability('taxi-evasion')?.50:ability('impact-cushion')?.62:.78;
+      state.speed*=impactFactor;state.vx*=impactFactor;state.vz*=impactFactor;
     }
   }
   mobility.runSignals(simTime,dt,world,oldX,oldZ);
@@ -672,7 +695,7 @@ function draw(dt,now){
   const roadLift=state.vehicle==='gravity'&&state.ability>0?2.15+.13*Math.sin(simTime*4):0;
   const a=prefersReduced?0:Math.abs(speed)*.0007;
   for(const [id,{car,wheels}] of Object.entries(world.cars)){
-    const active=!ride&&model===id, parked=!ride&&!indoor&&walking()&&parkedModel===id;
+    const active=!ride&&!variant(state.vehicle)&&model===id, parked=!ride&&!variant(lastMount?.id)&&!indoor&&walking()&&parkedModel===id;
     car.visible=parked||(active&&state.camera!==1);
     if(!car.visible)continue;
     const [cx,cz,cyaw]=active?[x,z,heading]:lastMount.coords;
@@ -680,10 +703,28 @@ function draw(dt,now){
     car.position.set(cx,.035+Math.sin(now*.018)*a+(active?roadLift:0),cz);car.rotation.set(0,-cyaw,active?-steer*Math.min(id==='bike'?.28:.06,Math.abs(speed)*(id==='bike'?.019:.003)):0,'YZX');
     for(const w of wheels){w.mount.rotation.y=active&&w.front?-steer*.30:0;if(active&&id!=='bike'&&id!=='rover')w.mount.rotation.x-=speed*dt/.37}
   }
+  for(const [id,{model:vehicle,kind}] of Object.entries(world.extras.fleetModels)){
+    if(kind==='rail')continue;
+    const p=variant(id),active=!ride&&state.vehicle===id,parked=!ride&&!indoor&&walking()&&lastMount?.id===id;
+    const passengerRide=ride?.pack?.vehicleId===id;
+    vehicle.visible=(active&&state.camera!==1)||(parked&&state.camera!==1)||(passengerRide&&!inCab);
+    if(!vehicle.visible)continue;
+    const pose=active?{x,z,heading}:parked?{x:lastMount.coords[0],z:lastMount.coords[1],heading:lastMount.coords[2]}:ride.pose;
+    const {x:vx,z:vz,heading:vh}=pose;
+    const isWater=kind==='boat',isAir=kind==='air';
+    const abilityOn=active&&state.ability>0;
+    const steady=abilityOn&&['steady','ferry-stabilize'].includes(p.ability);
+    const submerge=isWater&&p.chassis==='sub'?(active?state.depth:0):0;
+    const y=isWater?(steady?-.13:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:active?roadLift+.035:.035;
+    vehiclePaint(vehicle,p.color);
+    vehicle.position.set(vx,y,vz);
+    vehicle.rotation.set(isWater?(steady?0:(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.21):0,
+      -vh,isWater?(steady?0:(waveHeight(vx+1.5,vz,simTime)-waveHeight(vx-1.5,vz,simTime))*.25):active?-steer*Math.min(.10,Math.abs(speed)*.003):0,'YXZ');
+  }
   world.extras.rider.visible=model==='bike';
   const {mesh,prop}=world.aircraft,alt=state.altitude;
-  const parkedPlane=walking()&&isAir(lastMount?.id);
-  mesh.visible=(flying()&&state.phase!=='crashed'&&state.camera!==1&&!inCab)||(!indoor&&parkedPlane&&!ride);
+  const parkedPlane=walking()&&isAir(lastMount?.id)&&!variant(lastMount?.id),variantPlane=variant(state.vehicle)?.kind==='air';
+  mesh.visible=(flying()&&!variantPlane&&state.phase!=='crashed'&&state.camera!==1&&!inCab)||(!indoor&&parkedPlane&&!ride);
   const aircraftId=parkedPlane?lastMount.id:state.vehicle, floats=modelOf(aircraftId)==='float';
   if(mesh.visible){vehiclePaint(mesh,variant(aircraftId)?.color);mesh.scale.set(aircraftId==='thermal'?1.28:aircraftId==='sprintjet'?.86:1,1,aircraftId==='trimotor'?1.25:1)}
   for(const o of world.extras.floats.values())o.visible=floats;
@@ -712,7 +753,7 @@ function draw(dt,now){
   for(const p of life.beachItems){p.model.visible=state.job==='cleanup'&&!social.picked.has(p.id);p.model.rotation.y+=dt*.84}
   for(const [id,craft] of Object.entries(life.craft)){
     if(id==='hydro'&&!state.owned.includes(id)){craft.visible=false;continue}
-    const active=model===id,parked=walking()&&!indoor&&parkedModel===id&&isSea(lastMount?.id);
+    const active=!variant(state.vehicle)&&model===id,parked=walking()&&!variant(lastMount?.id)&&!indoor&&parkedModel===id&&isSea(lastMount?.id);
     if(id==='sub'&&!active&&!parked){craft.visible=false;continue}
     const [bx,bz,byaw]=active?[x,z,heading]:parked?lastMount.coords:boatParking[id];
     craft.visible=!active||state.camera!==1&&!inCab;
@@ -825,13 +866,13 @@ function draw(dt,now){
 function drawTransitModels(ride,cab,t){
   const {arch}=world;
   const pose=(g,p)=>{g.position.set(p.x,p.y+.04,p.z);g.rotation.y=-p.heading};
-  const manual=rail(), offset=9.2;
-  const parked=isRail(lastMount?.id),paint=variant(manual?state.vehicle:lastMount?.id);
+  const manual=rail()&&!variant(state.vehicle), offset=9.2;
+  const parked=isRail(lastMount?.id)&&!variant(lastMount?.id),paint=variant(manual?state.vehicle:lastMount?.id);
   arch.train.front.visible=(manual||parked)&&!ride&&!(manual&&(cab||state.camera===1||state.railY<-2));
   arch.train.back.visible=(manual||parked)&&!ride;
   if(manual||parked){
     vehiclePaint(arch.train.front,paint?.color);
-    const tram=paint?.model==='tram';arch.train.front.scale.set(tram?.9:1,tram?.91:1,tram?1.14:1);
+    const tram=paint?.chassis==='tram';arch.train.front.scale.set(tram?.9:1,tram?.91:1,tram?1.14:1);
     const t=manual?state.track:nearestRail(lastMount.coords[0],lastMount.coords[1]).track;
     pose(arch.train.front,railAt(t));pose(arch.train.back,railAt(t-offset));
     if(t<4.5||tram)arch.train.back.visible=false;
@@ -850,10 +891,20 @@ function drawTransitModels(ride,cab,t){
     pose(arch.metro.front,front);pose(arch.metro.back,b);
     if(Math.abs(k-(sign<0?length:0))<4.5)arch.metro.back.visible=false;
   }
+  const railVariant=variant(state.vehicle)?.kind==='rail'?state.vehicle:walking()&&variant(lastMount?.id)?.kind==='rail'?lastMount.id:null;
+  if(railVariant){
+    const item=world.extras.fleetModels[railVariant],active=rail()&&state.vehicle===railVariant,parked=walking()&&lastMount?.id===railVariant&&!indoor;
+    const model=variant(railVariant),track=active?state.track:nearestRail(lastMount.coords[0],lastMount.coords[1]).track;
+    const front=railAt(track),back=railAt(track-offset);
+    vehiclePaint(item.model,model.color);if(item.back)vehiclePaint(item.back,model.color);
+    item.model.visible=active&&!cab&&state.camera!==1&&state.railY>=-2||parked&&state.camera!==1;
+    if(item.back)item.back.visible=(active&&!cab&&state.camera!==1||parked&&state.camera!==1)&&track>=4.5&&model.chassis!=='tram';
+    pose(item.model,front);if(item.back)pose(item.back,back);
+  }
   for(const id of ['bus','taxi','ferry','airport']){
     const m=arch.vehicleModels[id], active=ride?.type===id;
     const idle=id==='ferry'&&state.x<65&&Math.abs(state.z-70)<125||id==='bus'&&state.x<42&&Math.abs(state.z-62)<68;
-    m.visible=active?!cab:idle;
+    m.visible=active?(ride?.pack?.vehicleId?false:!cab):idle;
     if(!m.visible)continue;
     if(active)pose(m,ride.pose);
     else if(id==='ferry')pose(m,{x:39,z:70,y:waveHeight(39,70,t),heading:Math.PI/2});

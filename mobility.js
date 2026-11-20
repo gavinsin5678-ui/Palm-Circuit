@@ -3,11 +3,12 @@ import {sportsCard,sportModes} from './sports.js?v=connections';
 import {animatePerson} from './life-world.js?v=connections';
 import {hasVenue,venueFor} from './terminal-world.js?v=streets';
 import {seats,cabinLevel,cabinService,cabinTitle} from './cabin.js?v=terminal';
-import {fleetProducts,aircraft,servicePackages} from './fleet.js?v=streets';
+import {fleetProducts,aircraft} from './fleet.js?v=fleet-variants';
 import {weapons} from './combat.js?v=streets';
 
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const fareRates={rail:9,bus:5,taxi:16,ferry:22,airport:38};
+const commuterTypes=['bus','taxi','ferry'];
 const care=[
   ['Warm blankets','A nurse is restocking the observation area. Deliver folded blankets to the waiting bays.','Bring the blankets','$18 volunteer stipend'],
   ['Lost wristband','A visitor found a patient’s lost wristband. Return it to the coordinator for safekeeping.','Return the wristband','Up to −$35 bounty or $12'],
@@ -176,22 +177,22 @@ export function createMobility(api){
       const {stop:s,dest:d,line}=selection, base=quote(s,d),pass=gatePasses.get(s.id);
       heading(`${vehicleLabels[s.type]} · ${s.name}`,d.name);
       if(purchaseMsg)copy(purchaseMsg,'transit-warning');
-      if(cabinService(s.type)){
-        const paid=pass==='paid'?0:base, premium=s.type==='airport'?[0,33,64]:s.type==='rail'?[0,12,25]:[0,9,19];
-        const services=s.type==='bus'?servicePackages.bus:null,pack=services?.[selection.service??0];
-        if(services){
-          copy('Coach type changes your trip; cabin class changes your seat and service.');
-          for(const [i,p] of services.entries())item(p.name,`${p.extra?`+$${p.extra}`:'BASE FARE'} · ${p.info}`,()=>{
-            selection={...selection,service:i};paint();
-          },{selected:p===pack});
+      if(commuterTypes.includes(s.type)){
+        copy('Choose a variant, then ride as a passenger for the standard fare or drive an owned vehicle yourself for $10 more.');
+        for(const [id,p] of Object.entries(fleetProducts).filter(([,p])=>p.family===s.type)){
+          copy(`${p.info} · Handling ${p.power.toFixed(2)} power / ${p.steer.toFixed(2)} steering`,'product-info');
+          item(`Ride as Passenger · ${p.name}`,`${money(base)} · standard fare`,()=>ticket(s,d,base,'Economy',false,line,{name:p.name,vehicleId:id}));
+          item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}),{disabled:!state.owned.includes(id)});
         }
+      }else if(cabinService(s.type)){
+        const paid=pass==='paid'?0:base, premium=s.type==='airport'?[0,33,64]:s.type==='rail'?[0,12,25]:[0,9,19];
         copy(pass==='paid'?'Your validated pass includes Economy. Upgrades cost only the class difference.':'Pick a cabin. Business and First Class include VIP service and a personal TV.');
         for(const [i,cls] of Object.keys(seats).entries()){
-          const cost=paid+premium[i]+(pack?.extra??0);item(`Board ${cls}`,`${cost?money(cost):'FARE INCLUDED'} · ${seats[cls].size}`,()=>ticket(s,d,cost,cls,false,line,pack));
+          const cost=paid+premium[i];item(`Board ${cls}`,`${cost?money(cost):'FARE INCLUDED'} · ${seats[cls].size}`,()=>ticket(s,d,cost,cls,false,line));
         }
       }else{
-        copy('Choose a service for this trip. Packages have different ride pacing or routes.');
-        for(const p of servicePackages[s.type])item(p.name,`${money(base+p.extra)} · ${p.info}`,()=>ticket(s,d,base+p.extra,'Standard',false,line,p));
+        copy('Choose a service for this trip.');
+        item('Standard service',money(base),()=>ticket(s,d,base,'Standard',false,line));
       }
       if(pass!=='paid')item('Board without paying',pass==='unpaid'?'FARE VIOLATION ALREADY RECORDED':'+$9 bounty',()=>ticket(s,d,0,'Economy',true,line),{alt:true});
       item('Back to departures','',()=>open('station',{stop:s,line}));
@@ -367,9 +368,13 @@ export function createMobility(api){
   }
   function ticket(s,d,fare,cls,unpaid=false,line,pack){
     if(api.venue()?.stop.id!==s.id||s.type==='rail'&&(api.venue()?.zone!==line||!gatePasses.has(s.id)))return;
+    if(pack?.driveSelf&&!state.owned.includes(pack.vehicleId))return;
     if(state.cash<fare){purchaseMsg=`You are ${money(fare-state.cash)} short. Choose another service or earn more cash.`;paint();return}
     if(fare>0)social.changeCash(-fare,`${stopTypes[s.type]} fare`);else if(unpaid&&gatePasses.get(s.id)!=='unpaid')fine('fare');
     if(s.type==='rail')gatePasses.delete(s.id);
+    if(pack?.driveSelf){
+      waypoint=d;close(false);api.driveTransitVehicle(pack.vehicleId,s,d);api.focus();api.refresh();return;
+    }
     ride=buildRide(s,d,!unpaid,cls,line,pack);ride.pose=ride.type==='rail'?railAt(ride.from,line):ride.course(0);
     ride.previousVehicle=state.vehicle;
     waypoint=null;

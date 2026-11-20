@@ -15,7 +15,7 @@ const care=[
   ['Family update','A family is waiting to find the care desk. Guide them there so staff can help.','Walk them to reception','$27 volunteer stipend']
 ];
 const vehicleLabels={rail:'Metro / Coastal Rail',bus:'Pacifica Link Bus',taxi:'Metered Taxi',ferry:'Island Ferry',airport:'Pacifica Air'};
-const charges={fare:[9,'Unpaid fare'],red:[14,'Red-light violation'],theft:[34,'Property theft'],crash:[26,'Traffic collision'],major:[86,'Dangerous collision'],reckless:[120,'High-speed crossing hazard'],override:[240,'Unauthorized autopilot override'],pulse:[18,'Unlicensed pulse discharge']};
+const charges={fare:[9,'Unpaid fare'],red:[14,'Red-light violation'],theft:[34,'Property theft'],crash:[26,'Traffic collision'],major:[86,'Dangerous collision'],reckless:[120,'High-speed crossing hazard'],pulse:[18,'Unlicensed pulse discharge']};
 export const gadgets={
   jet:{price:115,name:'Jet Roadster',info:'A brief burst of straight-line acceleration. H engages the boost.'},
   gravity:{price:145,name:'Gravity Coupe',info:'H engages a low hover and lets the coupe glide over roadside obstacles.'},
@@ -48,6 +48,29 @@ function path(pts){
     const a=pts[i-1],b=pts[i],n=Math.hypot(b[0]-a[0],b[1]-a[1],(b[2]??0)-(a[2]??0));
     if(n>.05){segs.push({a,b,len:n,start:length});length+=n}
   }
+  function updatePilotFlight(dt){
+    if(ride.arrived){flightKeys.clear();return}
+    const p=ride.pose,steer=Number(flightKeys.has('KeyD')||flightKeys.has('ArrowRight'))-Number(flightKeys.has('KeyA')||flightKeys.has('ArrowLeft')),
+      pitch=Number(flightKeys.has('ArrowUp'))-Number(flightKeys.has('ArrowDown'));
+    if(flightKeys.has('KeyW'))ride.pilotThrottle=clamp(ride.pilotThrottle+dt*.42,0,1);
+    if(flightKeys.has('KeyS'))ride.pilotThrottle=clamp(ride.pilotThrottle-dt*.62,0,1);
+    ride.pilotSpeed=clamp(ride.pilotSpeed+(ride.pilotThrottle*13-2.6)*dt,0,58);
+    if(flightKeys.has('Space'))ride.pilotSpeed=Math.max(0,ride.pilotSpeed-18*dt);
+    ride.pilotBank+=(steer*.48-ride.pilotBank)*Math.min(1,dt*1.7);
+    ride.pilotPitch+=(pitch*.27-ride.pilotPitch)*Math.min(1,dt*1.15);
+    if(p.y<.3&&ride.pilotSpeed<23)p.y=0;
+    else p.y=clamp(p.y+ride.pilotSpeed*Math.sin(ride.pilotPitch)*dt,0,190);
+    p.heading=(p.heading+Math.sin(ride.pilotBank)*.14*(Math.max(12,ride.pilotSpeed)/30)*dt+Math.PI*2)%(Math.PI*2);
+    p.x+=Math.sin(p.heading)*ride.pilotSpeed*dt;
+    p.z-=Math.cos(p.heading)*ride.pilotSpeed*dt;
+    ride.pilotDistance+=ride.pilotSpeed*dt;
+    ride.time=ride.duration*Math.min(.99,ride.pilotDistance/ride.pilotRouteLength);
+    state.throttle=ride.pilotThrottle;state.pitch=ride.pilotPitch;state.bank=ride.pilotBank;state.airborne=p.y>.3;
+    const end=ride.course(1),distance=Math.hypot(end.x-p.x,end.z-p.z);
+    if(distance<38&&p.y<9&&ride.pilotSpeed<24&&!ride.arrived){
+      ride.arrived=true;ride.time=ride.duration;flightKeys.clear();api.syncSelection();social.notice(`Landed · ${ride.d.name}`);api.sound(515);
+    }
+  }
   return t=>{
     if(!length)return {x:pts[0][0],z:pts[0][1],y:0,heading:0};
     const d=length*clamp(t,0,1),{a,b,len,start}=segs.find(q=>d<=q.start+q.len)??segs.at(-1),w=(d-start)/len;
@@ -61,6 +84,12 @@ function roadPath(s,d,scenic){
     const stroll=s.region==='main'?[[sx-48,sz],[sx-48,dz]]:[[sx,byRegion(s.region).z+40.5],[365,byRegion(s.region).z+40.5],[365,byRegion(s.region).z+3.5]];
     return [[s.x,s.z],[sx,s.z],[sx,sz],...(scenic?stroll:[]),[sx,dz],[dx,dz],[dx,d.z],[d.x,d.z]];
   }
+  function keyUp(e){flightKeys.delete(e.code)}
+  function clearFlightInputs(){flightKeys.clear()}
+  function flightInput(code,down){
+    if(!ride?.pilotControl)return;
+    if(down)flightKeys.add(code);else flightKeys.delete(code);
+  }
   const join=[[3.5,99.4],[311,99.4]],bridge=s.region==='main'?join:d.region==='main'?[...join].reverse():[];
   return [[s.x,s.z],[sx,s.z],[sx,sz],...bridge,[dx,dz],[dx,d.z],[d.x,d.z]];
 }
@@ -70,22 +99,22 @@ function ferryPath(s,d,scenic){
   const end=q=>q.region==='main'?36:223;
   return [[end(s),z(s),.18],[x(s),z(s),.18],...(scenic?[[140,(z(s)+z(d))*.5+38,.18]]:s.region===d.region?[]:[[x(d),z(s),.18]]),[x(d),z(d),.18],[end(d),z(d),.18]];
 }
-function flightPath(s,d,override=false){
+function flightPath(s,d){
   const r=q=>q.region==='main'?-195:369;
   const start=[r(s),s.z-5,0],end=[r(d),d.z-5,0],farS=[start[0],start[1]-103,26],farD=[end[0],end[1]-74,20];
-  return [start,[start[0],start[1]-32,0],farS,[(start[0]+end[0])/2,(start[1]+end[1])/2+(override?142:-31),override?119:83],farD,[end[0],end[1]-39,0],end];
+  return [start,[start[0],start[1]-32,0],farS,[(start[0]+end[0])/2,(start[1]+end[1])/2-31,83],farD,[end[0],end[1]-39,0],end];
 }
 function buildRide(s,d,paid,cls,line,pack){
   const type=s.type, rail=type==='rail', from=rail?railStop(s,line):0,to=rail?railStop(d,line):0;
   const duration=(rail?clamp(Math.abs(to-from)/22,8.5,28):type==='airport'?25:type==='ferry'?20:clamp(Math.hypot(s.x-d.x,s.z-d.z)/23+5,12,25))*(pack?.pace??1);
   const course=rail?null:path(type==='ferry'?ferryPath(s,d,pack?.scenic):type==='airport'?flightPath(s,d):roadPath(s,d,pack?.scenic));
-  return {s,d,type,paid,cls,from,to,duration,time:0,course,line,pack,override:false,pose:null,tv:false,channel:0,service:''};
+  return {s,d,type,paid,cls,from,to,duration,time:0,course,line,pack,pose:null,tv:false,channel:0,service:''};
 }
 
 export function createMobility(api){
   const {state,social}=api;
   const panel=$('transit-panel'), area=$('transit-content'), live=$('ride-hud'), cockpit=$('bridge-console');
-  const log=[],gatePasses=new Map();let panelMode=null, selection=null, ride=null, sport=null, waypoint=null, crossing=null, incident=null, roadOfficer=null;
+  const log=[],gatePasses=new Map(),flightKeys=new Set();let panelMode=null, selection=null, ride=null, boarding=null, sport=null, waypoint=null, crossing=null, incident=null, roadOfficer=null;
   let alertCool=0, propFx=null, gadgetCool=0, atlasRegion='main', purchaseMsg='', prevSignal=null, uiClock=0;
   let sirenX=0,sirenZ=0, patrolHeading=0, cockpitOn=false, lamp=false, assist=false, chime=0, viewTrim=0;
   let pursuit=[],capture=0,custody=null,grace=0,flash=0,puzzleStep=0,arena=null,leadActive=false;
@@ -184,6 +213,10 @@ export function createMobility(api){
           item(`Ride as Passenger · ${p.name}`,`${money(base)} · standard fare`,()=>ticket(s,d,base,'Economy',false,line,{name:p.name,vehicleId:id}));
           item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}),{disabled:!state.owned.includes(id)});
         }
+      }else if(s.type==='airport'){
+        copy(`Gate ${line??'A'} · Choose passenger service or buy the flight-deck option for $10 above the standard ticket price.`);
+        item('Fly as Passenger',`${money(base)} · standard Economy ticket`,()=>open('flight-class',selection));
+        item('Fly Yourself',`${money(base+10)} · standard ticket plus $10 pilot fee`,()=>ticket(s,d,base+10,'Economy',false,line,{pilot:true,gate:line??'A'}));
       }else if(cabinService(s.type)){
         const paid=pass==='paid'?0:base, premium=s.type==='airport'?[0,33,64]:s.type==='rail'?[0,12,25]:[0,9,19];
         copy(pass==='paid'?'Your validated pass includes Economy. Upgrades cost only the class difference.':'Pick a cabin. Business and First Class include VIP service and a personal TV.');
@@ -194,8 +227,18 @@ export function createMobility(api){
         copy('Choose a service for this trip.');
         item('Standard service',money(base),()=>ticket(s,d,base,'Standard',false,line));
       }
-      if(pass!=='paid')item('Board without paying',pass==='unpaid'?'FARE VIOLATION ALREADY RECORDED':'+$9 bounty',()=>ticket(s,d,0,'Economy',true,line),{alt:true});
+      if(pass!=='paid'&&s.type!=='airport')item('Board without paying',pass==='unpaid'?'FARE VIOLATION ALREADY RECORDED':'+$9 bounty',()=>ticket(s,d,0,'Economy',true,line),{alt:true});
       item('Back to departures','',()=>open('station',{stop:s,line}));
+    }
+    if(panelMode==='flight-class'){
+      const {stop:s,dest:d,line}=selection,base=quote(s,d);
+      heading('PACIFICA AIR · PASSENGER CABIN',d.name);
+      copy('Select your passenger cabin. Economy is the standard ticket price; Business and First Class add the listed cabin upgrade.');
+      for(const [i,cls] of Object.keys(seats).entries()){
+        const fare=base+[0,33,64][i];
+        item(`Fly as Passenger · ${cls}`,money(fare),()=>ticket(s,d,fare,cls,false,line,{gate:line??'A'}));
+      }
+      item('Back to flight options','',()=>open('ticket',selection));
     }
     if(panelMode==='law'){
       heading('PACIFICA POLICE SERVICE','Bounty Ledger');
@@ -353,14 +396,6 @@ export function createMobility(api){
       if(!selection.severe)item('Offer to cover the repair','$18 · up to −$20 bounty',()=>{if(state.cash<18){copy('Not enough cash. You can still exchange details.','transit-warning');return}social.changeCash(-18,'Repair contribution');law(-20,'Repair resolved');incident=null;close()});
       item('Leave the conversation','Bounty stays on record',()=>{incident=null;close()},{alt:true});
     }
-    if(panelMode==='override'){
-      heading('PACIFICA AIR · SIMULATOR EVENT','Autopilot override');
-      copy('This is a fictional route override. It changes the approach to a scenic detour; it does not give you control of the passenger aircraft.');
-      item('Trigger fictional override','+$240 bounty',()=>{
-        if(ride?.type==='airport'&&!ride.override){ride.override=true;ride.detour=ride.time/ride.duration;fine('override');api.sound(155)}
-        close();
-      },{alt:true});item('Keep the scheduled approach','',()=>close());
-    }
   }
   function quote(s,d){
     const m=Math.hypot(s.x-d.x,s.z-d.z);
@@ -375,10 +410,23 @@ export function createMobility(api){
     if(pack?.driveSelf){
       waypoint=d;close(false);api.driveTransitVehicle(pack.vehicleId,s,d);api.focus();api.refresh();return;
     }
+    if(s.type==='airport'){
+      boarding={ride:buildRide(s,d,!unpaid,cls,line,pack),pilot:!!pack?.pilot};
+      close(false);api.enterVenue(s,'jetbridge',false,[0,15],0);return;
+    }
     ride=buildRide(s,d,!unpaid,cls,line,pack);ride.pose=ride.type==='rail'?railAt(ride.from,line):ride.course(0);
     ride.previousVehicle=state.vehicle;
     waypoint=null;
     api.startRide();if(cabinService(ride.type))cockpitOn=true;close(false);api.focus();api.refresh();
+  }
+  function startFlight(pilot){
+    if(!boarding){social.notice('Buy a flight ticket at the terminal before boarding.');return}
+    if(pilot&&!boarding.pilot){social.notice('The flight-deck controls require the $10 pilot option.');return}
+    ride=boarding.ride;boarding=null;ride.pose=ride.course(0);ride.previousVehicle=state.vehicle;
+    ride.pilotControl=pilot;ride.pilotSpeed=0;ride.pilotThrottle=0;ride.pilotPitch=0;ride.pilotBank=0;ride.pilotDistance=0;
+    const start=ride.course(0),end=ride.course(1);
+    ride.pilotRouteLength=Math.max(1,Math.hypot(end.x-start.x,end.z-start.z));
+    waypoint=null;flightKeys.clear();api.startRide();cockpitOn=true;close(false);api.focus();api.refresh();
   }
   function closest(list){const [x,z]=api.position();return [...list].sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z))[0]}
   function handle(s){
@@ -400,6 +448,11 @@ export function createMobility(api){
       case 'platform': if(gatePasses.has(s.id)&&state.z<-4)api.enterVenue(s,a.data,true);else social.notice('Use the fare gate first.');break;
       case 'hall': api.enterVenue(s,'concourse',true,[0,-12],Math.PI);break;
       case 'departures': if(s.type!=='rail'||gatePasses.has(s.id))open('station',{stop:s,line:a.data});break;
+      case 'aircraft-boarding': if(boarding)api.enterVenue(s,'airliner',false,[0,25.2],0);else social.notice('You need a flight ticket to board.');break;
+      case 'flight-seat': if(boarding)startFlight(false);else social.notice('You need a flight ticket to board.');break;
+      case 'flight-deck': if(boarding)startFlight(true);else social.notice('You need a flight ticket to board.');break;
+      case 'airport':api.enterVenue(s,'airport',false,[0,-13],Math.PI);break;
+      case 'jetbridge':api.enterVenue(s,'jetbridge',false,[0,15],0);break;
       case 'check-in':open('check-in',{stop:s});break;
       case 'hangar':api.enterVenue(s,'hangar');break;
       case 'terminal':api.enterVenue(s,'airport',false,[11,-13],Math.PI);break;
@@ -414,7 +467,7 @@ export function createMobility(api){
       case 'hologram':social.notice('Face the hologram and press Q to tag it during a round.');break;
       case 'staff':{
         const line=v.zone==='concourse'?'Validate at the middle gate, then take the stairs to the surface platforms or the underground Metro. The Railcar in your fleet is separate.':
-          v.zone==='airport'?'Flights board at Gate A and Gate B. Follow the walkway to the hangar for private aircraft.':
+          v.zone==='airport'?'Flights board at Gate A and Gate B. Buy a ticket for passenger service or the $10 pilot option, then walk through the jet bridge to the aircraft.':
           v.zone==='hospital'?'Our volunteers bring blankets, return lost items, guide families, and help in the training room. Look for the markers beside the bays.':
           v.zone==='hangar'?'Browse the catalog here or go to the far end to take an owned aircraft onto the runway.':'Walk to the marked boarding point to check prices and destinations.';
         open('staff',{name:a.data,kicker:s.name,line});break;
@@ -566,7 +619,12 @@ export function createMobility(api){
         if(phase>=1)propFx=null;
       }
     }
-    if(!ride||panelMode==='override')return;
+    if(!ride)return;
+    if(ride.pilotControl){
+      updatePilotFlight(dt);
+      api.ridePosition(ride.pose);
+      return;
+    }
     ride.time=Math.min(ride.duration,ride.time+dt);
     const progress=ride.time/ride.duration;
     if(ride.type==='rail'){
@@ -576,11 +634,6 @@ export function createMobility(api){
     }else{
       const p=ride.course(progress);
       if(ride.pack?.foil)p.y+=Math.sin(Math.PI*progress)*1.15;
-      if(ride.override&&progress>ride.detour){
-        const q=(progress-ride.detour)/Math.max(.13,1-ride.detour);
-        p.y+=Math.sin(Math.PI*clamp(q,0,1))*35;
-        p.x+=Math.sin(Math.PI*clamp(q,0,1))*42;
-      }
       ride.pose=p;
     }
     api.ridePosition(ride.pose);
@@ -648,7 +701,7 @@ export function createMobility(api){
     output.textContent=money(state.bounty);$('law-badge').classList.toggle('hot',state.bounty>=60);
     $('law-badge').setAttribute('aria-label',`Bounty ledger, ${state.bounty} dollars outstanding`);
     document.body.classList.toggle('transit-open',!!panelMode);
-    const showCabin=!!ride&&cabinService(ride.type)&&cockpitOn,star=wanted();
+    const showCabin=!!ride&&cabinService(ride.type)&&cockpitOn&&!ride.pilotControl,star=wanted();
     $('wanted-hud').hidden=!star&&!custody;
     $('wanted-stars').textContent='★'.repeat(star);
     $('wanted-status').textContent=custody?`CUSTODY · ${Math.ceil(custody.remaining)}s`:grace>0?`GRACE · ${Math.ceil(grace)}s`:api.isIndoor()?'WANTED · INDOORS':capture>0?'CAPTURE RISK':'ACTIVE PURSUIT';
@@ -669,21 +722,20 @@ export function createMobility(api){
     $('cabin-panel').hidden=!showCabin;
     $('cockpit-view').hidden=!(api.isFlying()||api.isBoating()||api.isRail()||ride);
     if(cockpitOn&&!showCabin){
-      $('bridge-name').textContent=ride?ride.type==='taxi'?'Taxi cabin':'Ferry observation deck':api.isFlying()?'Pilot cockpit':api.isRail()?'Railcar cab':'Wheelhouse';
+      $('bridge-name').textContent=ride?ride.pilotControl?'Pacifica Air · Flight Deck':ride.type==='airport'?'Pacifica Air · Passenger Cabin':ride.type==='taxi'?'Taxi cabin':'Ferry observation deck':api.isFlying()?'Pilot cockpit':api.isRail()?'Railcar cab':'Wheelhouse';
       $('bridge-gauge').textContent=`${String(((Math.round(state.heading*180/Math.PI)%360)+360)%360).padStart(3,'0')}° · ${Math.round(Math.abs(state.speed)*3.6)} km/h`;
       $('bridge-light').setAttribute('aria-pressed',String(lamp));$('bridge-hold').setAttribute('aria-pressed',String(assist));
-      $('bridge-hold').hidden=!!ride||api.isRail();$('bridge-override').hidden=ride?.type!=='airport'||ride.arrived||ride.override;
+      $('bridge-hold').hidden=!!ride||api.isRail();
       cockpit.classList.toggle('deck-lit',lamp);cockpit.classList.toggle('chiming',chime>0);
     }
     live.hidden=!ride;
     if(ride){
-      $('ride-line').textContent=`${vehicleLabels[ride.type]} · ${ride.pack?.name??ride.cls}${ride.pack&&cabinService(ride.type)?` · ${ride.cls}`:''}`;
+      $('ride-line').textContent=`${vehicleLabels[ride.type]} · ${ride.pilotControl?'PILOTING':ride.pack?.name??ride.cls}${ride.pack&&cabinService(ride.type)?` · ${ride.cls}`:''}`;
       $('ride-title').textContent=ride.arrived?`Arrived at ${ride.d.name}`:ride.d.name;
       $('ride-progress').value=ride.time/ride.duration;
       $('ride-exit').hidden=!ride.arrived;
       $('ride-view').hidden=false;$('ride-view').childNodes[0].nodeValue=cockpitOn?'Outside view ':'Inside view ';
-      $('ride-extra').hidden=ride.type!=='airport'||ride.override||ride.arrived;
-      $('ride-sector').textContent=ride.type==='rail'?railSector(ride.pose.x,ride.pose.y).toUpperCase():ride.type==='airport'&&ride.override?'SCENIC DETOUR':ride.paid?'VALIDATED FARE':'UNVALIDATED FARE';
+      $('ride-sector').textContent=ride.type==='rail'?railSector(ride.pose.x,ride.pose.y).toUpperCase():ride.pilotControl?'MANUAL FLIGHT · W/S THROTTLE · ARROWS PITCH / BANK · SPACE BRAKE':ride.paid?'VALIDATED FARE':'UNVALIDATED FARE';
       if(showCabin){
         const data=seats[ride.cls];$('cabin-panel').dataset.level=cabinLevel(ride.cls);
         $('cabin-line').textContent=cabinTitle(ride.type);$('cabin-title').textContent=ride.cls;$('cabin-seat').textContent=data.seat;
@@ -707,6 +759,9 @@ export function createMobility(api){
     if(e.code==='KeyL'){e.preventDefault();if(!ride&&!custody)open('law');return true}
     if(e.code==='KeyP'){e.preventDefault();bridgeToggle();return true}
     if(ride){
+      if(ride.pilotControl&&['KeyW','KeyS','ArrowUp','ArrowDown','KeyA','KeyD','ArrowLeft','ArrowRight','Space'].includes(e.code)){
+        e.preventDefault();flightKeys.add(e.code);return true;
+      }
       if(e.code==='KeyE'||e.code==='KeyG'){e.preventDefault();rideInteract()}
       if(e.code==='KeyC'){e.preventDefault();bridgeToggle()}
       return true;
@@ -716,8 +771,6 @@ export function createMobility(api){
   $('transit-close').addEventListener('click',()=>close());$('transit-toggle').addEventListener('click',()=>{if(panelMode){close();return}if(!ride&&!custody){atlasRegion=regionAt(...api.position()).id;open('atlas')}});
   $('law-badge').addEventListener('click',()=>{if(!ride&&!custody)open('law')});
   $('ride-exit').addEventListener('click',rideInteract);$('ride-view').addEventListener('click',bridgeToggle);$('cockpit-view').addEventListener('click',bridgeToggle);
-  const override=()=>{if(ride?.type==='airport'&&!ride.arrived&&!ride.override)open('override')};
-  $('ride-extra').addEventListener('click',override);$('bridge-override').addEventListener('click',override);
   $('bridge-light').addEventListener('click',()=>{lamp=!lamp;refresh();api.focus()});
   $('bridge-hold').addEventListener('click',()=>{assist=!assist;refresh();api.focus()});
   $('bridge-chime').addEventListener('click',()=>{chime=.62;api.sound(515);refresh();api.focus()});
@@ -726,11 +779,12 @@ export function createMobility(api){
   $('cabin-call').addEventListener('click',()=>{if(ride){const s=seats[ride.cls];if(s)ride.service=`VIP service · Your attendant brings ${s.drink.toLowerCase()}.`;refresh();api.focus()}});
   $('cabin-tv-toggle').addEventListener('click',()=>{if(ride&&seats[ride.cls]?.screen){if(ride.tv)ride.channel=(ride.channel+1)%3;ride.tv=true;refresh();api.focus()}});
   $('cabin-look').addEventListener('click',()=>{viewTrim=viewTrim===0?.39:viewTrim>0?-.39:0;api.snap();api.focus()});
-  return {refresh,update,key,atStation,handle,fine,law,collision,runSignals,gadget,bridgeToggle,resetCockpit,
+  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,handle,fine,law,collision,runSignals,gadget,bridgeToggle,resetCockpit,
     panel:()=>panelMode,close,rideInteract,outOfRide,ride:()=>ride,waypoint:()=>waypoint,venueAction,leaveVenueState,detained:()=>!!custody,round:()=>arena,
     cockpit:()=>cockpitOn,trim:()=>viewTrim,assist:()=>assist,lamp:()=>lamp,mark,patrolTalk:()=>open('law',{pay:true}),
     inspect:()=>({view:panelMode,gate:api.venue()?gatePasses.get(api.venue().stop.id)??null:null,
-      ride:ride?{from:ride.s.id,to:ride.d.id,type:ride.type,line:ride.line,pack:ride.pack?.name,progress:ride.time/ride.duration,arrived:!!ride.arrived,paid:ride.paid,override:ride.override,cls:ride.cls,y:ride.pose?.y,tv:ride.tv,service:ride.service}:null,
+      boarding:boarding?{from:boarding.ride.s.id,to:boarding.ride.d.id,pilot:boarding.pilot}:null,
+      ride:ride?{from:ride.s.id,to:ride.d.id,type:ride.type,line:ride.line,pack:ride.pack?.name,progress:ride.time/ride.duration,arrived:!!ride.arrived,paid:ride.paid,pilotControl:!!ride.pilotControl,cls:ride.cls,y:ride.pose?.y,tv:ride.tv,service:ride.service,speed:ride.pilotSpeed}:null,
       crossing:crossing?{...crossing}:null,waypoint:waypoint?.id??null,bountyLog:log,sport:sport?.status()??null,cockpit:cockpitOn,light:lamp,hold:assist,trim:viewTrim,
       wanted:wanted(),units:Number(leadActive)+pursuit.filter(p=>p.mesh.visible).length,capture,custody,grace,arena,care:[...careDone],wardTaken,wardDrill})
   };

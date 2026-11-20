@@ -27,6 +27,8 @@ export const stops=[
   stop('market-taxi','taxi','Miramar Taxi Stand',10.6,35.3),
   stop('ferry','ferry','Pacifica Ferry Terminal',26.5,69),
   stop('airport','airport','Pacifica International',-183,113),
+  stop('airport-north','airport','North Bay Airfield',-195,-104,'main'),
+  stop('airport-west','airport','West Bay Regional',-214,72,'main'),
   stop('sport','sports','Boardwalk Sports Club',13.7,113),
   stop('law','law','Pacifica Police Desk',11.5,21),
   stop('hospital','hospital','Pacifica Medical',11.8,9.7),
@@ -37,6 +39,7 @@ export const stops=[
 for(const i of islands){
   stops.push(stop(`${i.id}-ferry`,'ferry',`${i.name} Ferry Pier`,243,i.z+27,i.id));
   stops.push(stop(`${i.id}-air`,'airport',`${i.name} Airfield`,357,i.z+41,i.id));
+  stops.push(stop(`${i.id}-air-east`,'airport',`${i.name} East Airfield`,376,i.z+47,i.id));
   stops.push(stop(`${i.id}-bus`,'bus',`${i.name} Bus Terminal`,301,i.z+8,i.id));
   stops.push(stop(`${i.id}-taxi`,'taxi',`${i.name} Taxi Rank`,325,i.z+8,i.id));
   stops.push(stop(`${i.id}-sports`,'sports',`${i.name} Recreation`,326,i.z-11,i.id));
@@ -325,11 +328,16 @@ function modelTrain(){
 }
 function modelFlight(){
   const g=new T.Group();
-  shell(g,3.4,3.1,13,'#c5cfdf');
-  box(g,0,1.36,.5,19,.24,2.8,'#a8b9d0');
-  box(g,0,2.7,5.1,.25,2.8,2.15,'#728caa');
-  box(g,0,2.17,5.6,7.4,.16,1.35,'#a8b9d0');
-  for(const x of [-4,4])box(g,x,.86,-.18,1.45,.96,2.4,'#788ba6');
+  shell(g,4.1,3.5,23,'#d5e0e5','#57788a');
+  box(g,0,1.42,.25,32,.24,5.25,'#a9bdc9');
+  box(g,0,2.7,9.3,.24,2.4,2.05,'#718c9c');
+  box(g,0,2.18,9.7,7.1,.16,1.4,'#a9bdc9');
+  for(const x of [-5.7,5.7]){
+    box(g,x,1.13,.25,2.0,1.12,4.0,'#8198a5');
+    box(g,x,.99,-1.45,1.55,.72,.13,'#314857');
+    for(let z=-8;z<=8;z+=2.35)box(g,Math.sign(x)*2.055,2.12,z,.055,.48,.73,'#96c3d1',true);
+  }
+  box(g,-1.05,.34,4.9,.13,.61,.13,'#536b75');box(g,1.05,.34,4.9,.13,.61,.13,'#536b75');
   return g;
 }
 function modelFerry(){

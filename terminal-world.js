@@ -23,7 +23,7 @@ function placard(g,x,y,z,w,label,sub='',accent='#8fe5c9',rot=0){
   const o=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({map:textures.get(key),side:T.DoubleSide}));
   o.userData.venueLabel=true;o.position.set(x,y,z);o.rotation.y=rot;g.add(o);
 }
-const tint={concourse:'#8fd8c2',surface:'#ecc18d',below:'#7ddddd',airport:'#a5c9ec',hangar:'#f3bc7e',hospital:'#aee6dc',jail:'#e7bb72',arena:'#cbaeed',bus:'#a9d6a5',taxi:'#f0cc8c',ferry:'#8fdce1'};
+const tint={concourse:'#8fd8c2',surface:'#ecc18d',below:'#7ddddd',airport:'#a5c9ec',hangar:'#f3bc7e',hospital:'#aee6dc',jail:'#e7bb72',arena:'#cbaeed',bus:'#a9d6a5',taxi:'#f0cc8c',ferry:'#8fdce1',jetbridge:'#8fc5d5',airliner:'#9fc4e4'};
 export const hasVenue=s=>s&&['rail','airport','hospital','arena','bus','taxi','ferry'].includes(s.type);
 export function venueFor(stop,zone){
   return zone??(stop.type==='rail'?'concourse':stop.type);
@@ -33,7 +33,8 @@ export function makeTerminal(stop,zone,openGate=false){
   scene.add(new T.HemisphereLight('#e5f6ff','#b29b8b',2.2));
   const key=new T.DirectionalLight('#fff0cb',2);key.position.set(4,10,5);scene.add(key);
   const compact=['bus','taxi','ferry'].includes(zone);
-  const w=zone==='jail'?6.5:zone==='hospital'?13:compact?9:16,d=zone==='jail'?6:zone==='hospital'?15:compact?12:22;
+  const w=zone==='airliner'?5.8:zone==='jetbridge'?5.2:zone==='jail'?6.5:zone==='hospital'?13:compact?9:16,
+    d=zone==='airliner'?28:zone==='jetbridge'?18:zone==='jail'?6:zone==='hospital'?15:compact?12:22;
   const accent=tint[zone], points=[],targets=[],people=[],belts=[],trains=[];
   const box=(...v)=>block(g,...v);
   const sign=(x,y,z,b,label,sub='',rot=0)=>placard(g,x,y,z,b,label,sub,accent,rot);
@@ -160,8 +161,8 @@ export function makeTerminal(stop,zone,openGate=false){
     target('Check departures with check-in',-5,9.8,'check-in');
     walkway(7,2,22,-1);walkway(11,2,22,1);
     for(const z of [4,-2,-9]){bench(-10,z);bench(-4,z)}
-    port(-7.5,-17,'GATE A · BOARDING','departures');
-    port(0,-17,'GATE B · BOARDING','departures');
+    port(-7.5,-17,'GATE A · BOARDING','departures','A');
+    port(0,-17,'GATE B · BOARDING','departures','B');
     port(11,-17,'HANGAR & SALES','hangar');
     for(const x of [-10,-5,0,5]){
       box(x,2.62,-21.64,4.7,2.75,.07,'#86b7ca',true);
@@ -180,6 +181,60 @@ export function makeTerminal(stop,zone,openGate=false){
     npc(-5,12,'Check-in traveler','#c8a995',null);people.at(-1).route=[[-5,12],[-5,9.1],[-7.45,7.2]];
     box(-7.5,2.25,-21.4,2.05,3.1,.18,'#465d73');box(-7.5,2.24,-21.27,1.62,2.46,.09,'#749bad',true);
     box(-.8,2.25,-21.4,2.05,3.1,.18,'#465d73');box(-.8,2.24,-21.27,1.62,2.46,.09,'#749bad',true);
+  }else if(zone==='jetbridge'){
+    title=`${stop.name} · Jet Bridge`;exit='airport';
+    sign(0,3.7,-13,8,'JET BRIDGE','FOLLOW THE LIGHTS TO YOUR AIRCRAFT');
+    for(let z=-d+2;z<d-2;z+=3.5){
+      for(const x of [-3.85,3.85])box(x,2.7,z,.12,4.7,.18,'#45697b');
+      box(0,.11,z,7.5,.04,.055,'#b4dce1',true);
+    }
+    box(0,3.95,-7,7.6,.16,18,'#577789');
+    port(0,-d+2.4,'BOARD YOUR AIRCRAFT','aircraft-boarding');
+    npc(-2,3,'Cabin attendant','#9cc7d3','staff',.8);
+  }else if(zone==='airliner'){
+    title=`${stop.name} · Pacifica Air`;exit='jetbridge';
+    sign(0,3.55,-25,8,'BUSINESS CLASS','QUIET CABIN  /  FORWARD');
+    sign(0,3.55,-3,8,'ECONOMY CLASS','STANDARD SEATING  /  REAR');
+    box(0,2.4,-23,10.8,4.7,.24,'#526e80');
+    box(0,2.4,27,10.8,4.7,.24,'#526e80');
+    for(const side of [-1,1]){
+      box(side*5.55,2.55,0,.24,5.1,54,'#526e80');
+      for(let z=-20;z<=20;z+=4.2){
+        box(side*5.40,2.68,z,.06,1.02,1.72,'#75a9c2',true);
+        box(side*5.34,2.68,z,.08,1.15,1.9,'#354e61');
+      }
+    }
+    for(const z of [-17,-13,-9]){
+      for(const side of [-1,1]){
+        box(side*2.7,.59,z,1.58,.22,1.58,'#506c80');
+        box(side*2.7,1.06,z+.29,1.56,1.07,.42,'#6789a0');
+        box(side*2.7,1.63,z+.28,1.27,.15,.31,'#b6d2d7');
+        box(side*2.7,.77,z-.49,1.48,.16,.34,'#344d60');
+        solid(side*2.7,z,.82,.86);
+      }
+    }
+    for(const z of [-5,0,5,10,15,20]){
+      for(const side of [-1,1])for(const offset of [2.52,3.67]){
+        const x=side*offset;
+        box(x,.57,z,.94,.18,1.18,'#526c7c');
+        box(x,1.00,z+.22,.93,.91,.32,'#69889a');
+        box(x,1.51,z+.22,.79,.13,.25,'#9fbec6');
+        box(x,.72,z-.40,.86,.13,.25,'#354d5d');
+        solid(x,z,.49,.61);
+      }
+    }
+    box(0,.08,-21,9.3,.16,1.3,'#334d5e');
+    box(0,1.6,-20,9.2,3.1,.22,'#425f72');
+    box(-2.2,1.28,-19.8,1.12,2.2,.15,'#64889a');
+    box(2.2,1.28,-19.8,1.12,2.2,.15,'#64889a');
+    box(0,.62,-23.4,4.5,.8,1.25,'#293c4b');
+    box(0,1.08,-23.5,4.4,.15,1.36,'#597b8d');
+    for(const x of [-1.4,-.7,0,.7,1.4])box(x,1.24,-23.76,.36,.25,.25,'#8bd5c1',true);
+    target('Enter the flight deck',0,-20,'flight-deck',null,2.8);
+    target('Take your Business Class seat',1.55,-13,'flight-seat','Business',2.8);
+    target('Take your Economy Class seat',1.55,5,'flight-seat','Economy',2.8);
+    npc(-4.3,1,'Cabin attendant','#a8cbd3','staff',1.2);
+    npc(4.3,11,'Passenger','#c5a58e',null,1);
   }else if(zone==='hangar'){
     title='Pacifica Air · Hangar';exit='terminal';
     sign(0,3.95,-17,11,'HANGAR 01','FLIGHT SCHOOL  /  AIRCRAFT SALES');
@@ -221,7 +276,7 @@ export function makeTerminal(stop,zone,openGate=false){
     for(const y of [.4,2.25,3.65])box(0,y,-3.4,12.8,.12,.15,'#8ba1aa');
     bench(-3.7,2,1);port(0,-1,'CUSTODY TERMINAL','custody');
   }
-  if(exit){const label=exit==='hall'?'Return to ticket hall':exit==='terminal'?'Return to the terminal':'Exit to street';port(0,d-1.2,label.toUpperCase(),exit);targets.at(-1).label=label}
+  if(exit){const label=exit==='hall'?'Return to ticket hall':exit==='terminal'||exit==='airport'?'Return to the terminal':exit==='jetbridge'?'Return to the jet bridge':'Exit to street';port(0,d-1.2,label.toUpperCase(),exit);targets.at(-1).label=label}
   const player=person('#66ada2','#c48b65',true);g.add(player.model);
   return {scene,g,w,d,targets,points,people,player,title,entry,zone,stop,openGate,
     tag(id,visible){const p=people.find(v=>v.tag===id);if(p)p.model.visible=visible},

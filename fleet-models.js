@@ -44,12 +44,77 @@ export function makeExtraModels(w){
   for(const [id,p] of Object.entries(fleetProducts)){
     const model=p.family==='bus'||p.family==='taxi'?makeRoadServiceVehicle(p):
       p.family==='ferry'?makeFerryVariant(p.variant):
+      p.kind==='air'?makeAircraftVariant(p):
       (p.kind==='boat'?w.life.craft[p.chassis]:p.kind==='rail'?w.arch.train.front:w.aircraft.mesh).clone(true);
     addVariantKit(model,p);
     const back=p.kind==='rail'?w.arch.train.back.clone(true):null;
     model.visible=false;if(back)back.visible=false;
     w.scene.add(model);if(back)w.scene.add(back);
-    fleetModels[id]={model,back,kind:p.kind};
+    fleetModels[id]={model,back,kind:p.kind,propellers:model.userData.propellers??[]};
+  }
+  function makeAircraftVariant(p){
+    const g=new T.Group(),propellers=[];
+    const fuselage=p.family==='plane'?[9.6,15.2,12.4][p.variant]:[10.1,11.8,10.8][p.variant];
+    const span=p.family==='plane'?[21.5,14.4,17.4][p.variant]:[14.6,16.8,15.5][p.variant];
+    const body=shape(g,round,p.color,0,1.14,0,1.34,.88,fuselage*.52);
+    body.material.color.set(p.color);
+    shape(g,round,'#d7e8e4',0,1.73,-fuselage*.19,.73,.32,fuselage*.20);
+    box(g,'#d7e8e4',0,1.47,-fuselage*.43,1.08,.12,.19);
+    if(p.family==='plane'&&p.model==='thermal'){
+      box(g,'#d5e0dc',0,1.42,.15,span,.13,1.55);
+      box(g,'#c7d8d1',0,1.48,fuselage*.34,5.25,.12,1.28);
+      box(g,p.color,0,1.63,fuselage*.42,.22,.52,.33);
+      box(g,'#566b75',0,.47,.12,.28,.62,.34);
+      return g;
+    }
+    const wingChord=p.family==='plane'&&p.model==='sprintjet'?2.35:p.family==='plane'?2.0:1.75;
+    const wing=box(g,'#b7c8ce',0,1.08,.28,span,.16,wingChord);
+    if(p.model==='sprintjet'){
+      for(const x of [-1,1]){
+        box(g,p.color,x*span*.25,1.07,.69,span*.48,.15,wingChord*.9).rotation.y=x*.20;
+        shape(g,round,'#647b8a',x*3.0,.77,.56,.67,.59,2.95);
+        shape(g,round,'#253c4c',x*3.0,.77,-.93,.40,.39,.45);
+      }
+      box(g,p.color,0,1.35,fuselage*.34,5.3,.14,1.18);
+      box(g,p.color,0,1.83,fuselage*.41,.24,.92,.82);
+      box(g,'#718797',0,.55,fuselage*.28,1.25,.12,1.05);
+    }else{
+      box(g,p.color,0,1.39,fuselage*.34,5.1,.14,1.24);
+      box(g,p.color,0,1.80,fuselage*.41,.22,.94,.88);
+      if(p.model==='trimotor'){
+        for(const x of [-span*.28,span*.28]){
+          shape(g,round,'#a4b5ba',x,.89,-.12,.68,.59,1.78);
+          propellers.push(makePropeller(g,x,.89,-1.07,'#526976'));
+        }
+        shape(g,round,'#a4b5ba',0,.92,-fuselage*.43,.49,.46,1.32);
+        propellers.push(makePropeller(g,0,.92,-fuselage*.50,'#526976'));
+      }else{
+        const floatScale=p.variant===0?1:p.variant===1?1.18:1.06;
+        for(const x of [-span*.17,span*.17]){
+          box(g,'#aebdc0',x,.37,.45,.16,.58,.18);
+          const pontoon=shape(g,round,p.color,x,.27,.54,.43*floatScale,.30,2.45*floatScale);
+          pontoon.material.color.set(p.color);
+        }
+        box(g,'#465e6a',0,.43,.20,.27,.52,.42);
+        if(p.model==='albatross')box(g,'#d7e3de',0,.12,.62,span*.56,.12,.38);
+        if(p.model==='otter'){
+          for(const x of [-1,1])box(g,'#526b77',x*span*.17,.58,-.16,.11,.44,.13);
+        }
+        propellers.push(makePropeller(g,0,.98,-fuselage*.50,'#526976'));
+      }
+    }
+    if(p.model==='skipper')box(g,'#d6a77f',0,.35,fuselage*.23,.66,.27,.5);
+    if(p.model==='albatross')box(g,'#dce8e3',0,1.1,fuselage*.18,1.18,.16,2.7);
+    wing.userData.baseWing=true;
+    g.userData.propellers=propellers;
+    return g;
+  }
+  function makePropeller(parent,x,y,z,color){
+    const prop=new T.Group();prop.position.set(x,y,z);parent.add(prop);
+    box(prop,color,0,0,0,.13,1.56,.12);
+    box(prop,color,0,0,0,1.56,.13,.12);
+    shape(prop,round,'#344956',0,0,0,.23,.23,.22);
+    return prop;
   }
   return {rider,shoal,floats:extras,fleetModels};
 }
@@ -134,7 +199,7 @@ function makeFerryVariant(variant){
 }
 function addVariantKit(g,p){
   const color=p.color,boxKit=(x,y,z,w,h,d)=>box(g,color,x,y,z,w,h,d);
-  if(p.family==='bus'||p.family==='taxi')return;
+  if(p.family==='bus'||p.family==='taxi'||p.kind==='air')return;
   if(p.kind==='road'){
     if(p.variant===0){
       boxKit(-.72,1.18,1.72,.16,.12,.38);boxKit(.72,1.18,1.72,.16,.12,.38);

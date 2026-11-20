@@ -64,13 +64,13 @@ const solidHit=(x,z,y,r)=>world?.stream.hit(x,z,y,r)||world?.arch.hit(x,z,y,r);
 const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);if(x>219)properties.push(...world.arch.properties);return {properties,people}};
 const clearKeys=()=>{keys.clear();touchKeys.clear()};
 const shift=()=>action('ShiftLeft','ShiftRight');
-const cameraName=()=>mobility.cockpit()?(mobility.ride()?'Passenger Cabin':'Control Room'):(flying()?airCameras:rail()?['Rail Chase','Driver Cab','Survey Cam']:walking()?footCameras:boating()?waterCameras:cameras)[state.camera];
+const cameraName=()=>mobility.cockpit()?(mobility.ride()?.pilotControl?'Flight Deck':mobility.ride()?'Passenger Cabin':'Control Room'):(flying()?airCameras:rail()?['Rail Chase','Driver Cab','Survey Cam']:walking()?footCameras:boating()?waterCameras:cameras)[state.camera];
 const launchTitle=()=>flying()?'Start flying':walking()?'Start exploring':boating()?'Set sail':rail()?'Drive Railcar':'Start driving';
 const endTitle=()=>flying()?'End flight':walking()?'End walk':boating()?'Moor boat':rail()?'Park Railcar':'End drive';
 const social=createSocial(state,()=>{if(state.dialogue)clearKeys();refresh()},()=>{document.body.classList.remove('dialog-open');focusView(false);refresh()},()=>mobility.fine('theft'));
 const worldPosition=()=>groundPosition??[state.x,state.z];
 const districtAt=(x,z)=>{const island=islandAt(x,z);return island?[island.tag,island.name]:highwayAt(x,z)&&x>31?['PACIFICA ARCHIPELAGO','Channel Expressway']:districtFor(x,z)};
-const mobility=createMobility({state,social,refresh,clearKeys,position:worldPosition,focus:()=>focusView(false),snap:()=>{snap=true},
+const mobility=createMobility({state,social,refresh,syncSelection,clearKeys,position:worldPosition,focus:()=>focusView(false),snap:()=>{snap=true},
   sync:syncSelection, sound:playChime,startRide,ridePosition,endRide,driveTransitVehicle,hit:solidHit,isIndoor:()=>!!indoor,isWalking:walking,isRoadVehicle:motoring,isFlying:flying,isBoating:boating,isRail:rail,
   venue:()=>indoor?.zone?indoor:null,enterVenue,leaveVenue,goRunway,
   wardActions:p=>combat.wardActions(p),expose:p=>combat.expose(p),aid:p=>combat.aid(p)});
@@ -131,14 +131,16 @@ function paintMap(){
   <path d="M${mapX(runway.x)} ${mapY(runway.north)} V${mapY(runway.south)} M${mapX(runwayWest.x)} ${mapY(runwayWest.north)} V${mapY(runwayWest.south)}" stroke="#f4c189" opacity=".73" stroke-width="${14*mapSX}" stroke-dasharray="5 2"/>`;
 }
 function syncSelection(){
-  document.body.classList.toggle('aviation',flying());
+  const airlinerFlight=mobility.ride()?.pilotControl&&!mobility.ride()?.arrived;
+  document.body.classList.toggle('aviation',flying()||airlinerFlight);
   document.body.classList.toggle('crashed',state.phase==='crashed');
   document.body.classList.toggle('on-foot',walking());document.body.classList.toggle('boating',boating());
   for(const b of buttons)b.setAttribute('aria-pressed',String(b.dataset.mode===state.mode));
   for(const b of vehicles){const id=b.dataset.vehicle;b.setAttribute('aria-pressed',String(id===state.vehicle));b.hidden=prototypeIds.includes(id)&&!state.owned.includes(id)}
-  $('controls-label').textContent=flying()?'FLIGHT CONTROLS':walking()?'ON-FOOT CONTROLS':boating()?'BOAT CONTROLS':rail()?'RAIL CONTROLS':'DRIVER CONTROLS';
-  $('drive-controls').hidden=flying()||walking()||rail();$('flight-controls').hidden=!flying();$('flight-data').hidden=!flying();$('rail-controls').hidden=!rail();
-  $('arrow-note').hidden=!flying();$('walk-controls').hidden=!walking();
+  $('controls-label').textContent=airlinerFlight?'AIRLINER FLIGHT CONTROLS':flying()?'FLIGHT CONTROLS':walking()?'ON-FOOT CONTROLS':boating()?'BOAT CONTROLS':rail()?'RAIL CONTROLS':'DRIVER CONTROLS';
+  $('drive-controls').hidden=flying()||walking()||rail()||airlinerFlight;
+  $('flight-controls').hidden=!flying()&&!airlinerFlight;$('flight-data').hidden=!flying()&&!airlinerFlight;$('rail-controls').hidden=!rail();
+  $('arrow-note').hidden=!flying();$('walk-controls').hidden=!walking()||airlinerFlight;
   start.querySelector('span').textContent=state.phase==='running'?endTitle():state.phase==='crashed'?'Recover trainer':launchTitle();
   mobileStart.textContent=launchTitle();
 }
@@ -242,7 +244,7 @@ function startRide(){
   Object.assign(state,{vx:0,vz:0,altitude:0,railY:0,throttle:0,bank:0,pitch:0,airborne:false,jump:0,ability:0});
   document.body.classList.add('playing','riding');syncSelection();
   const pos=mobility.ride()?.pose;
-  if(pos){state.x=pos.x;state.z=pos.z;ridePosition(pos)}
+  if(pos){state.x=pos.x;state.z=pos.z;state.speed=0;ridePosition(pos)}
   snap=true;
 }
 function ridePosition(pos){
@@ -260,7 +262,7 @@ function endRide(dest){
       if(solidLand(xx,zz)&&!solidHit(xx,zz,.5,.5)){loc=[xx,zz,h];break}
     }
   }
-  Object.assign(state,{x:loc[0],z:loc[1],speed:0,heading:loc[2],altitude:0,railY:0,swimming:false,jump:0});
+  Object.assign(state,{x:loc[0],z:loc[1],speed:0,heading:loc[2],altitude:0,railY:0,throttle:0,pitch:0,bank:0,airborne:false,swimming:false,jump:0});
   snap=true;syncSelection();focusView(false);
 }
 function complete(won){
@@ -309,7 +311,9 @@ function refresh(){
   if(flying()){$('altitude').textContent=Math.round(state.altitude);$('throttle').textContent=Math.round(state.throttle*100)}
   speedBars.forEach((b,i)=>b.classList.toggle('on',i<Math.ceil(flying()?state.throttle*12:km/13)));$('camera-label').textContent=cameraName().toUpperCase();
   const round=mobility.round(),imaniHere=combat.vital({id:'imani'})>0;
-  const labels=flying()?(phase==='crashed'?['Aircraft disabled','The wreck stays here until you choose to recover.']:state.flightNotice?[state.flightNotice,'Throttle is idle. Brake to a stop.']:
+  const pilotFlight=mobility.ride()?.pilotControl;
+  const labels=pilotFlight?['Manual airliner flight',`${Math.round(state.altitude)} m altitude · ${Math.round(state.speed*3.6)} km/h · land low and slow at ${mobility.ride().d.name}`]:
+    flying()?(phase==='crashed'?['Aircraft disabled','The wreck stays here until you choose to recover.']:state.flightNotice?[state.flightNotice,'Throttle is idle. Brake to a stop.']:
       state.airborne?['Explore from the air',speed<27?'Low airspeed. Add throttle.':'Ease off the throttle and descend gently to land.']:
       ['Ready for takeoff',matchMedia('(pointer: coarse)').matches?'Raise throttle with +. Use ↑ at 100 km/h.':'Hold ↑ to take off. Press P for the cockpit.']):
     walking()?(insidePlace?(indoor?.zone?(indoor.zone==='arena'&&round?['Hologram Tag',round.done?'Round cleared. Replay at the terminal.':`${round.tags.length}/3 tagged · ${Math.ceil(round.remaining)}s`]:[indoor.zone==='jail'?'In custody':'Explore on foot',indoor.zone==='jail'?'Visit the custody terminal or wait out the sentence.':'Follow the signs and press E near a marked point.']):['Explore the room','Walk up to the door, cash drawer, or resident to interact.']):
@@ -322,7 +326,7 @@ function refresh(){
     mode==='roam'?[state.signal?`Traffic light: ${state.signal}`:'Explore Pacifica Bay',state.bounty>=60?'Patrol alert active. Visit a police desk to settle the bounty.':'Press T for the Transit Atlas. Take the Channel Expressway to the islands.']:
     mode==='sprint'?[phase==='ready'?'Hit all 7 checkpoints':phase==='finished'?'Course cleared':`Checkpoint ${checkpoint+1} of 7`,phase==='ready'?'Follow the green rings.':`Time ${fmt(elapsed)} · ${checkpoint} / 7 cleared`]:
       [phase==='finished'?'Parcel delivered':phase==='failed'?'Delivery expired':checkpoint===0?'Pick up the parcel':'Reach the drop-off',phase==='ready'?'Two stops. 65 seconds.':`${fmt(Math.ceil(time))} remaining · ${checkpoint} / 2 stops`];
-  const tag=flying()?'FREE FLIGHT':walking()?`${state.swimming?'SWIMMING':'ON FOOT'}${state.heat?' · HEAT '+state.heat:''}`:boating()||rail()?vehicleName[state.vehicle].toUpperCase():names[mode].toUpperCase();
+  const tag=pilotFlight?'COMMERCIAL PILOT':flying()?'FREE FLIGHT':walking()?`${state.swimming?'SWIMMING':'ON FOOT'}${state.heat?' · HEAT '+state.heat:''}`:boating()||rail()?vehicleName[state.vehicle].toUpperCase():names[mode].toUpperCase();
   if($('objective-tag').textContent!==tag)$('objective-tag').textContent=tag;
   if($('objective').textContent!==labels[0])$('objective').textContent=labels[0];
   if($('detail').textContent!==labels[1])$('detail').textContent=labels[1];
@@ -691,7 +695,7 @@ function update(dt){
 }
 function draw(dt,now){
   const {x,z,heading,steer,speed}=state, sin=Math.sin(heading), cos=Math.cos(heading);
-  const ride=mobility.ride(), inCab=mobility.cockpit(), passenger=!!ride&&cabinService(ride.type), model=modelOf(state.vehicle), parkedModel=modelOf(lastMount?.id);
+  const ride=mobility.ride(), inCab=mobility.cockpit(), passenger=!!ride&&cabinService(ride.type)&&!ride.pilotControl, model=modelOf(state.vehicle), parkedModel=modelOf(lastMount?.id);
   const roadLift=state.vehicle==='gravity'&&state.ability>0?2.15+.13*Math.sin(simTime*4):0;
   const a=prefersReduced?0:Math.abs(speed)*.0007;
   for(const [id,{car,wheels}] of Object.entries(world.cars)){
@@ -703,7 +707,7 @@ function draw(dt,now){
     car.position.set(cx,.035+Math.sin(now*.018)*a+(active?roadLift:0),cz);car.rotation.set(0,-cyaw,active?-steer*Math.min(id==='bike'?.28:.06,Math.abs(speed)*(id==='bike'?.019:.003)):0,'YZX');
     for(const w of wheels){w.mount.rotation.y=active&&w.front?-steer*.30:0;if(active&&id!=='bike'&&id!=='rover')w.mount.rotation.x-=speed*dt/.37}
   }
-  for(const [id,{model:vehicle,kind}] of Object.entries(world.extras.fleetModels)){
+  for(const [id,{model:vehicle,kind,propellers}] of Object.entries(world.extras.fleetModels)){
     if(kind==='rail')continue;
     const p=variant(id),active=!ride&&state.vehicle===id,parked=!ride&&!indoor&&walking()&&lastMount?.id===id;
     const passengerRide=ride?.pack?.vehicleId===id;
@@ -718,8 +722,9 @@ function draw(dt,now){
     const y=isWater?(steady?-.13:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:active?roadLift+.035:.035;
     vehiclePaint(vehicle,p.color);
     vehicle.position.set(vx,y,vz);
-    vehicle.rotation.set(isWater?(steady?0:(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.21):0,
-      -vh,isWater?(steady?0:(waveHeight(vx+1.5,vz,simTime)-waveHeight(vx-1.5,vz,simTime))*.25):active?-steer*Math.min(.10,Math.abs(speed)*.003):0,'YXZ');
+    vehicle.rotation.set(isAir&&active?state.pitch:isWater?(steady?0:(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.21):0,
+      -vh,isAir&&active?-state.bank:isWater?(steady?0:(waveHeight(vx+1.5,vz,simTime)-waveHeight(vx-1.5,vz,simTime))*.25):active?-steer*Math.min(.10,Math.abs(speed)*.003):0,'YXZ');
+    for(const prop of propellers)prop.rotation.z+=dt*(2.5+(active?state.throttle:0)*68);
   }
   world.extras.rider.visible=model==='bike';
   const {mesh,prop}=world.aircraft,alt=state.altitude;
@@ -774,7 +779,7 @@ function draw(dt,now){
   if(inCab&&(ride||rail()||flying()||boating())){
     const rideY=ride?.pose?.y, base=rideY??(rail()?state.railY:boating()?waveHeight(x,z,t)+(state.vehicle==='hydro'&&state.ability>0?3.3:0)-state.depth:alt);
     const isAir=flying()||ride?.type==='airport',isTrain=rail()||ride?.type==='rail';
-    const front=ride?.type==='airport'?5.95:ride?.type==='ferry'?3.75:isTrain?3.12:ride?.type==='bus'?3.55:flying()?.81:.74;
+    const front=ride?.type==='airport'?ride.pilotControl?10.4:5.95:ride?.type==='ferry'?3.75:isTrain?3.12:ride?.type==='bus'?3.55:flying()?.81:.74;
     const y=base+(isAir?2.2:isTrain?2.28:model==='yacht'||ride?.type==='ferry'?2.62:ride?.type==='bus'?2.23:1.48);
     const seat=passenger?[-.22,.06,.20][cabinLevel(ride.cls)]:0;
     cameraTarget.set(x+sin*front+cos*seat,y,z-cos*front+sin*seat);
@@ -906,7 +911,10 @@ function drawTransitModels(ride,cab,t){
     const idle=id==='ferry'&&state.x<65&&Math.abs(state.z-70)<125||id==='bus'&&state.x<42&&Math.abs(state.z-62)<68;
     m.visible=active?(ride?.pack?.vehicleId?false:!cab):idle;
     if(!m.visible)continue;
-    if(active)pose(m,ride.pose);
+    if(active){
+      pose(m,ride.pose);
+      if(id==='airport'&&ride.pilotControl)m.rotation.set(ride.pilotPitch,-ride.pose.heading,-ride.pilotBank,'YXZ');
+    }
     else if(id==='ferry')pose(m,{x:39,z:70,y:waveHeight(39,70,t),heading:Math.PI/2});
     else pose(m,{x:8.1,z:61,y:0,heading:0});
   }
@@ -981,9 +989,9 @@ addEventListener('keydown',e=>{
     case 'Escape':if(document.body.classList.contains('expanded'))fullscreen();break;
   }
 });
-addEventListener('keyup',e=>keys.delete(e.code));
-addEventListener('blur',()=>{keys.clear();touchKeys.clear()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();touchKeys.clear()}});
+addEventListener('keyup',e=>{keys.delete(e.code);mobility.keyUp(e)});
+addEventListener('blur',()=>{keys.clear();touchKeys.clear();mobility.clearFlightInputs()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();touchKeys.clear();mobility.clearFlightInputs()}});
 for(const b of buttons)b.addEventListener('click',()=>select(b.dataset.mode));
 for(const b of vehicles)b.addEventListener('click',()=>selectVehicle(b.dataset.vehicle));
 $('switch-vehicle').addEventListener('click',swapVehicle);
@@ -1002,8 +1010,8 @@ $('camera').addEventListener('click',()=>{cycleCamera();if(state.phase==='runnin
 $('reset').addEventListener('click',recover);
 $('sound').addEventListener('click',toggleAudio);$('fullscreen').addEventListener('click',fullscreen);
 for(const b of document.querySelectorAll('[data-key]')){
-  b.addEventListener('pointerdown',e=>{if(state.phase!=='running')return;e.preventDefault();b.setPointerCapture(e.pointerId);touchKeys.add(b.dataset.key)});
-  for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>touchKeys.delete(b.dataset.key));
+  b.addEventListener('pointerdown',e=>{if(state.phase!=='running')return;e.preventDefault();b.setPointerCapture(e.pointerId);touchKeys.add(b.dataset.key);mobility.flightInput(b.dataset.key,true)});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>{touchKeys.delete(b.dataset.key);mobility.flightInput(b.dataset.key,false)});
 }
 try{
   const {instance}=await WebAssembly.instantiate(Uint8Array.from(atob(wasm),c=>c.charCodeAt(0)));

@@ -3,8 +3,8 @@ import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} fr
 import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=streets';
 import {createSocial} from './social.js?v=connections';
-import {createMobility} from './mobility.js?v=streets';
-import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railSector,signals,signalAt} from './metro-world.js?v=terminal';
+import {createMobility} from './mobility.js?v=rail-network';
+import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=rail-network';
 import {makeTerminal,venueFor} from './terminal-world.js?v=streets';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
 import {fleetProducts} from './fleet.js?v=streets';
@@ -194,7 +194,7 @@ function swapLocation(id,x,z,yaw,old){
   }
   if(isRail(id)){const p=nearestRail(x,z);return [p.x,p.z,p.heading]}
   if(isRail(old)&&state.railY<-1.8){
-    const stopsOnRail=['central','depot','dune-rail','jungle-rail'].map(stopById).sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z));
+    const stopsOnRail=stops.filter(s=>s.type==='rail').sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z));
     ({x,z}=stopsOnRail[0]);
   }
   const useWater=isSea(id);
@@ -837,18 +837,18 @@ function drawTransitModels(ride,cab,t){
     if(t<4.5||tram)arch.train.back.visible=false;
   }
   const line=(t*.018)%2, schedule=line<1?line:2-line;
-  const metro=ride?.type==='rail'||!ride&&!manual&&state.phase==='running';
+  const metro=ride?.type==='rail'||!ride&&!manual&&state.phase==='running',route=ride?.line??'below',length=railRouteLength(route);
   arch.metro.front.visible=metro&&!(ride?.type==='rail'&&(cab||ride.pose.y<-2));
   arch.metro.back.visible=metro;
   if(metro){
-    const passenger=ride?.type==='rail',k=passenger?ride.from+(ride.to-ride.from)*ride.time/ride.duration:18+schedule*(railLength-31),
+    const passenger=ride?.type==='rail',k=passenger?ride.from+(ride.to-ride.from)*ride.time/ride.duration:18+schedule*(length-31),
       sign=passenger?Math.sign(ride.to-ride.from):(line<1?1:-1);
-    const b=railAt(k-sign*offset);
+    const b=railAt(k-sign*offset,route);
     if(sign<0)b.heading+=Math.PI;
-    const front=passenger?ride.pose:railAt(k);
+    const front=passenger?ride.pose:railAt(k,route);
     if(!passenger&&sign<0)front.heading+=Math.PI;
     pose(arch.metro.front,front);pose(arch.metro.back,b);
-    if(Math.abs(k-(sign<0?railLength:0))<4.5)arch.metro.back.visible=false;
+    if(Math.abs(k-(sign<0?length:0))<4.5)arch.metro.back.visible=false;
   }
   for(const id of ['bus','taxi','ferry','airport']){
     const m=arch.vehicleModels[id], active=ride?.type===id;

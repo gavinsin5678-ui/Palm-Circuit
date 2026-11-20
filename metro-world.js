@@ -44,37 +44,54 @@ for(const i of islands){
 }
 stops.push(stop('dune-rail','rail','Saffron Lowline',280,54,'dune',{platform:true}));
 stops.push(stop('jungle-rail','rail','Canopy Rail Terminal',281,-93,'jungle',{platform:true}));
+stops.push(stop('snow-rail','rail','Frostpeak Rail Terminal',280,270,'snow',{platform:true}));
+stops.push(stop('future-rail','rail','Neon Meridian Rail Terminal',280,486,'future',{platform:true}));
 export const stopById=id=>stops.find(s=>s.id===id);
 export const stopTypes={rail:'RAIL + METRO',ferry:'FERRY',airport:'AIRPORT',bus:'BUS',taxi:'TAXI',sports:'SPORTS',law:'POLICE',garage:'GARAGE',good:'CROSSING',hospital:'HOSPITAL',arena:'ARENA'};
-export const routeLine=[
-  [-116,96,0],[-8,96,0],[13,96,0],[28,92,-4],[60,70,-11],[232,53,-11],
-  [264,49,-9],[280,49,0],[296,49,0],[304,31,0],[304,-70,0],[293,-98,0],[276,-98,0]
+const surfaceLine=[
+  [-110,86,0],[-8,86,0],[11.8,99,0],[28,92,0],[60,70,0],[232,53,0],[280,54,0],
+  [313,54,0],[313,-93,0],[281,-93,0],[313,-93,0],[313,270,0],[280,270,0],
+  [313,270,0],[313,486,0],[280,486,0]
 ];
+const metroLine=[
+  [-110,86,0],[-8,106,0],[11.8,99,0],[28,104,-4],[48,64,-12],[232,47,-12],[262,47,-12],
+  [280,54,0],[301,54,-8],[301,-93,-8],[281,-93,0],[301,-93,-8],[301,270,-8],
+  [280,270,0],[301,270,-8],[301,486,-8],[280,486,0]
+];
+export const railRoutes={surface:surfaceLine,below:metroLine};
+export const routeLine=surfaceLine;
 export const railSector=(x,y)=>y>-3?'Surface line':x>31&&x<237?'Under the bay':'Underground line';
-const segments=[];let length=0;
-for(let i=1;i<routeLine.length;i++){
-  const a=routeLine[i-1],b=routeLine[i],len=Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]);
-  segments.push({a,b,len,start:length});length+=len;
-}
-export const railLength=length;
-export function railAt(distance){
-  const s=Math.max(0,Math.min(railLength,distance)), seg=segments.find(q=>s<=q.start+q.len)??segments.at(-1);
+const makeSegments=points=>{
+  const segments=[];let length=0;
+  for(let i=1;i<points.length;i++){
+    const a=points[i-1],b=points[i],len=Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]);
+    segments.push({a,b,len,start:length});length+=len;
+  }
+  return {segments,length};
+};
+const routes=Object.fromEntries(Object.entries(railRoutes).map(([id,points])=>[id,makeSegments(points)]));
+export const railRouteLength=line=>routes[line==='below'?'below':'surface'].length;
+export const railLength=railRouteLength('surface');
+export function railAt(distance,line='surface'){
+  const {segments,length}=routes[line==='below'?'below':'surface'];
+  const s=Math.max(0,Math.min(length,distance)), seg=segments.find(q=>s<=q.start+q.len)??segments.at(-1);
   const p=(s-seg.start)/seg.len,{a,b}=seg;
   return {x:a[0]+(b[0]-a[0])*p,z:a[1]+(b[1]-a[1])*p,y:a[2]+(b[2]-a[2])*p,heading:Math.atan2(b[0]-a[0],a[1]-b[1])};
 }
-export function nearestRail(x,z,includeBelow=false){
+export function nearestRail(x,z,includeBelow=false,line='surface'){
+  const {segments}=routes[line==='below'?'below':'surface'];
   let best;
   for(const {a,b,len,start} of segments){
     let t=Math.max(0,Math.min(1,((x-a[0])*(b[0]-a[0])+(z-a[1])*(b[1]-a[1]))/(Math.pow(b[0]-a[0],2)+Math.pow(b[1]-a[1],2))));
-    if(!includeBelow&&a[2]<-2&&b[2]<-2)continue;
-    const p=railAt(start+len*t);
-    if(!includeBelow&&p.y<-2){t=a[2]>b[2]?0:1;Object.assign(p,railAt(start+len*t))}
+    if(line==='surface'&&!includeBelow&&a[2]<-2&&b[2]<-2)continue;
+    const p=railAt(start+len*t,line);
+    if(line==='surface'&&!includeBelow&&p.y<-2){t=a[2]>b[2]?0:1;Object.assign(p,railAt(start+len*t,line))}
     const d=Math.hypot(x-p.x,z-p.z);
     if(!best||d<best.d)best={...p,d,track:start+len*t};
   }
   return best;
 }
-export const railStop=s=>nearestRail(s.x,s.z).track;
+export const railStop=(s,line='surface')=>nearestRail(s.x,s.z,line==='below',line).track;
 
 const boxGeo=new T.BoxGeometry(), tubeGeo=new T.CylinderGeometry(.5,.5,1,8);
 const matCache=new Map();
@@ -189,7 +206,7 @@ function makeInfrastructure(g,solids){
   }
 }
 function makeRailInfrastructure(g){
-  for(const {a,b,len} of segments){
+  for(const {segments} of Object.values(routes))for(const {a,b,len} of segments){
     const dx=b[0]-a[0],dz=b[1]-a[1],xz=Math.hypot(dx,dz), nx=-dz/xz,nz=dx/xz, angle=Math.atan2(dx,dz);
     const P=(t,s=0,y=0)=>[a[0]+dx*t+nx*s,a[2]+(b[2]-a[2])*t+y,a[1]+dz*t+nz*s];
     for(const s of [-1,1])rod(g,P(0,s*.9,.09),P(1,s*.9,.09),.15,'#a9b2b3');

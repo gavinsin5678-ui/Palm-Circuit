@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {nearestRail} from './metro-world.js?v=terminal';
+import {nearestRail} from './metro-world.js?v=rail-network';
 
 const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,12,8), tire=new T.CylinderGeometry(.43,.43,.22,14);
 function shape(g,geo,color,x,y,z,w,h,d){

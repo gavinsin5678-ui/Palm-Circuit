@@ -1,4 +1,4 @@
-import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=terminal';
+import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=rail-network';
 import {sportsCard,sportModes} from './sports.js?v=connections';
 import {animatePerson} from './life-world.js?v=connections';
 import {hasVenue,venueFor} from './terminal-world.js?v=streets';
@@ -35,7 +35,7 @@ export const gadgets={
 export const products={...gadgets,...fleetProducts};
 const isGadget=id=>id==='pulse'||!!gadgets[id]?.fx;
 const availableDestinations=(s,line)=>{
-  if(s.type==='rail')return stops.filter(q=>q.type==='rail'&&q.id!==s.id&&(line==='surface'?(s.region==='main')===(q.region==='main'):(s.region==='main')!==(q.region==='main')));
+  if(s.type==='rail')return stops.filter(q=>q.type==='rail'&&q.id!==s.id);
   if(s.type==='taxi')return stops.filter(q=>q.id!==s.id&&q.region===s.region&&['taxi','bus','sports','law','rail'].includes(q.type));
   return stops.filter(q=>q.type===s.type&&q.id!==s.id&&(s.type!=='bus'||s.region==='main'||q.region==='main'||q.region===s.region));
 };
@@ -75,7 +75,7 @@ function flightPath(s,d,override=false){
   return [start,[start[0],start[1]-32,0],farS,[(start[0]+end[0])/2,(start[1]+end[1])/2+(override?142:-31),override?119:83],farD,[end[0],end[1]-39,0],end];
 }
 function buildRide(s,d,paid,cls,line,pack){
-  const type=s.type, rail=type==='rail', from=rail?railStop(s):0,to=rail?railStop(d):0;
+  const type=s.type, rail=type==='rail', from=rail?railStop(s,line):0,to=rail?railStop(d,line):0;
   const duration=(rail?clamp(Math.abs(to-from)/22,8.5,28):type==='airport'?25:type==='ferry'?20:clamp(Math.hypot(s.x-d.x,s.z-d.z)/23+5,12,25))*(pack?.pace??1);
   const course=rail?null:path(type==='ferry'?ferryPath(s,d,pack?.scenic):type==='airport'?flightPath(s,d):roadPath(s,d,pack?.scenic));
   return {s,d,type,paid,cls,from,to,duration,time:0,course,line,pack,override:false,pose:null,tv:false,channel:0,service:''};
@@ -370,7 +370,7 @@ export function createMobility(api){
     if(state.cash<fare){purchaseMsg=`You are ${money(fare-state.cash)} short. Choose another service or earn more cash.`;paint();return}
     if(fare>0)social.changeCash(-fare,`${stopTypes[s.type]} fare`);else if(unpaid&&gatePasses.get(s.id)!=='unpaid')fine('fare');
     if(s.type==='rail')gatePasses.delete(s.id);
-    ride=buildRide(s,d,!unpaid,cls,line,pack);ride.pose=ride.type==='rail'?railAt(ride.from):ride.course(0);
+    ride=buildRide(s,d,!unpaid,cls,line,pack);ride.pose=ride.type==='rail'?railAt(ride.from,line):ride.course(0);
     ride.previousVehicle=state.vehicle;
     waypoint=null;
     api.startRide();if(cabinService(ride.type))cockpitOn=true;close(false);api.focus();api.refresh();
@@ -565,7 +565,7 @@ export function createMobility(api){
     ride.time=Math.min(ride.duration,ride.time+dt);
     const progress=ride.time/ride.duration;
     if(ride.type==='rail'){
-      const a=railAt(ride.from+(ride.to-ride.from)*progress);
+      const a=railAt(ride.from+(ride.to-ride.from)*progress,ride.line);
       if(ride.to<ride.from)a.heading+=Math.PI;
       ride.pose=a;
     }else{

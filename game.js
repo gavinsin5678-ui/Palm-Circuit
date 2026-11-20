@@ -229,7 +229,7 @@ function begin(){
   focusView();refresh();
 }
 function driveTransitVehicle(id,stop,destination){
-  if(!variant(id)||!state.owned.includes(id))return false;
+  if(!variant(id))return false;
   const heading=Math.atan2(destination.x-stop.x,stop.z-destination.z);
   const x=variant(id).kind==='boat'?(stop.region==='main'?43:222):stop.x;
   const [px,pz,yaw]=swapLocation(id,x,stop.z,heading,'walk');

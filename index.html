@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121820">
+  <title>Palm Circuit | Street &amp; Ward</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%23151c25'/%3E%3Cpath d='M25 7 9 22h10l-4 11 16-16H21z' fill='%2380efca'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./base.css">
+  <link rel="stylesheet" href="./style.css?v=connections">
+  <link rel="stylesheet" href="./mobility.css?v=islands-transit">
+  <link rel="stylesheet" href="./terminal.css?v=streets">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><svg viewBox="0 0 40 32" aria-hidden="true"><path d="M21 2 3 13h10L5 23l22-12H16L21 2Zm12 8L21 18h8l-8 11 17-11h-9l4-8Z" fill="currentColor"/></svg><div><h1>Palm Circuit</h1><span>PACIFICA CITY SANDBOX</span></div></div>
+    <div class="session"><i></i> PACIFICA ARCHIPELAGO <b></b> <span id="time-label" class="terminal-tag">STREET &amp; WARD</span></div>
+    <nav aria-label="Game tools">
+      <div class="wallet"><span>WALLET</span><output id="wallet" aria-label="Wallet balance">$75</output></div>
+      <button id="law-badge" class="wallet badge" aria-label="Bounty ledger" type="button"><span>BOUNTY</span><output id="bounty">$0</output></button>
+      <button id="sound" class="tool" type="button" aria-label="Toggle sound" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4h4l5 4V6l-5 4H3Zm13 0 5 5m0-5-5 5"/></svg><span>Sound</span></button>
+      <button id="fullscreen" class="tool" type="button" aria-label="Toggle fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg><span>Fullscreen</span></button>
+    </nav>
+  </header>
+  <main>
+    <aside class="console" aria-label="Game console">
+      <div class="console-inner">
+        <section class="fleet" id="fleet">
+          <div class="eyebrow"><i></i> EXPLORE BY LAND, AIR &amp; SEA</div>
+          <div class="vehicle-list" role="group" aria-label="Vehicle">
+            <button class="vehicle" data-vehicle="car" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 10 2-5h10l2 5M3 16v-3l2-3h14l2 3v3H3Zm2 0v3m14-3v3M7 13h1m8 0h1"/></svg> Roadster</button>
+            <button class="vehicle" data-vehicle="plane" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1.3 0 2 1.2 2 2.7v4.2l7 5v2l-7-2v3l2 1.6V21l-4-1-4 1v-1.4l2-1.6v-3l-7 2v-2l7-5V5.7C10 4.2 10.7 3 12 3Z"/></svg> Trainer</button>
+            <button class="vehicle" data-vehicle="walk" aria-pressed="false">On Foot</button>
+            <button class="vehicle" data-vehicle="sport" aria-pressed="false">Sport Coupe</button>
+            <button class="vehicle" data-vehicle="van" aria-pressed="false">Utility Van</button>
+            <button class="vehicle" data-vehicle="boat" aria-pressed="false">Speedboat</button>
+            <button class="vehicle" data-vehicle="yacht" aria-pressed="false">Yacht</button>
+            <button class="vehicle" data-vehicle="train" aria-pressed="false">Railcar</button>
+            <button class="vehicle" data-vehicle="jet" aria-pressed="false" hidden>Jet Roadster</button>
+            <button class="vehicle" data-vehicle="gravity" aria-pressed="false" hidden>Gravity Coupe</button>
+            <button class="vehicle" data-vehicle="hydro" aria-pressed="false" hidden>Skylift</button>
+          </div>
+        </section>
+        <button id="transit-toggle" type="button" class="tool atlas-tool"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="17" r="2"/><circle cx="19" cy="7" r="2"/><path d="M7 17h5a3 3 0 0 0 0-6h-1a2 2 0 1 1 0-4h6"/></svg><span>Transit Atlas</span><kbd>T</kbd></button>
+        <section class="modes" id="modes">
+          <div class="eyebrow"><i></i> THE COAST IS YOURS</div>
+          <h2>Choose a mode</h2>
+          <div class="mode-list" role="group" aria-label="Driving mode">
+            <button class="mode" data-mode="roam" aria-pressed="true"><span class="mode-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span><strong>Free Roam</strong><small>Explore at your own pace</small></span><em>01</em></button>
+            <button class="mode" data-mode="sprint" aria-pressed="false"><span class="mode-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4m0 1c5-4 8 4 14 0v10c-6 4-9-4-14 0m5-11v5m5 1v5M5 9c5-4 8 4 14 0"/></svg></span><span><strong>Coastal Sprint</strong><small>Race through checkpoints</small></span><em>02</em></button>
+            <button class="mode" data-mode="delivery" aria-pressed="false"><span class="mode-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 9 8-4.5M12 12 4 7.5m8 4.5v9M8 5.2l8 4.5"/></svg></span><span><strong>Express Delivery</strong><small>Beat the drop-off clock</small></span><em>03</em></button>
+          </div>
+          <button class="launch" id="start-btn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z" fill="currentColor" stroke="none"/></svg><span>Start driving</span><span class="launch-arrow" aria-hidden="true">↗</span></button>
+        </section>
+        <section class="controls">
+          <div class="eyebrow"><i></i><span id="controls-label">DRIVER CONTROLS</span></div>
+          <dl id="drive-controls"><div><dt>Accelerate / Brake</dt><dd><kbd>W / ↑</kbd><kbd>S / ↓</kbd></dd></div><div><dt>Steer</dt><dd><kbd>A / ←</kbd><kbd>D / →</kbd></dd></div><div><dt>Brake</dt><dd><kbd>Space</kbd></dd></div></dl>
+          <dl id="flight-controls" hidden><div><dt>Throttle up / down</dt><dd><kbd>W</kbd><kbd>S</kbd></dd></div><div><dt>Pitch up / down</dt><dd><kbd>↑</kbd><kbd>↓</kbd></dd></div><div><dt>Bank left / right</dt><dd><kbd>A / ←</kbd><kbd>D / →</kbd></dd></div><div><dt>Brake</dt><dd><kbd>Space</kbd></dd></div></dl>
+          <p class="control-note" id="arrow-note" hidden>Hold ↑ to take off. Hold Shift + ↑/↓ to adjust throttle in the air.</p>
+          <dl id="walk-controls" hidden><div><dt>Forward / Back</dt><dd><kbd>W / ↑</kbd><kbd>S / ↓</kbd></dd></div><div><dt>Turn</dt><dd><kbd>A / ←</kbd><kbd>D / →</kbd></dd></div><div><dt>Run / Interact</dt><dd><kbd>Shift</kbd><kbd>E</kbd></dd></div><div><dt>Jump / Gadget</dt><dd><kbd>Space</kbd><kbd>Q</kbd></dd></div><div><dt>Attack / Weapon</dt><dd><kbd>X</kbd><kbd>B</kbd></dd></div></dl>
+          <dl id="rail-controls" hidden><div><dt>Power / Reverse</dt><dd><kbd>W / ↑</kbd><kbd>S / ↓</kbd></dd></div><div><dt>Rail brake</dt><dd><kbd>Space</kbd></dd></div></dl>
+          <dl><div><dt>Control room / Ability</dt><dd><kbd>P</kbd><kbd>H</kbd></dd></div></dl>
+          <dl><div><dt>Walk or board</dt><dd><kbd>G</kbd></dd></div><div><dt>Switch vehicle</dt><dd><kbd>V</kbd></dd></div><div><dt>Camera / Reset</dt><dd><kbd>C</kbd><kbd>R</kbd></dd></div></dl>
+        </section>
+      </div>
+      <footer><span class="signal">●</span> ORIGINAL BROWSER GAME <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Built with Perplexity Computer</a></footer>
+    </aside>
+    <section id="viewport" class="viewport" aria-label="3D game view">
+      <div id="world"></div>
+      <div class="shade"></div>
+      <div class="hud-top">
+        <div class="district"><div class="eyebrow" id="location"><i></i> OCEAN DISTRICT</div><h2 id="district">Boardwalk Blvd</h2></div>
+        <div class="objective" aria-live="polite"><div class="eyebrow"><i></i><span id="objective-tag">FREE ROAM</span></div><strong id="objective">Explore Pacifica Bay</strong><span id="detail">No timer. The city is yours.</span></div>
+      </div>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div class="wanted-hud" id="wanted-hud" hidden><output id="wanted-stars" aria-label="Wanted stars"></output><small id="wanted-status"></small><progress id="wanted-capture" max="1" value="0" aria-label="Capture progress" hidden></progress></div>
+      <div class="wanted-flash" id="wanted-flash" aria-hidden="true" hidden><strong>★</strong><span>WANTED LEVEL UP</span></div>
+      <div id="combat-status" class="combat-status" hidden>
+        <div><strong id="combat-weapon">Hands</strong><small id="combat-target">No target ahead</small></div>
+        <meter id="combat-health" min="0" max="100" value="100" aria-label="Player vitality"></meter>
+      </div>
+      <button id="interact" class="tool interact" type="button" hidden><kbd>E</kbd><strong id="interact-label">Interact</strong></button>
+      <div class="world-tools">
+        <button id="quick-atlas" class="tool" type="button" aria-label="Open Transit Atlas" title="Transit Atlas (T)">Atlas <kbd>T</kbd></button>
+        <button id="cockpit-view" class="tool" type="button" aria-label="Toggle control room" title="Toggle control room (P)" hidden>Cab <kbd>P</kbd></button>
+        <button id="ability-tool" class="tool" type="button" aria-label="Activate vehicle ability" hidden>Ability <kbd>H</kbd></button>
+        <button id="gadget-tool" class="tool" type="button" aria-label="Use gadget" hidden>Gadget <kbd>Q</kbd></button>
+        <button id="attack-tool" class="tool" type="button" aria-label="Attack" hidden>Attack <kbd>X</kbd></button>
+        <button id="weapon-tool" class="tool" type="button" aria-label="Cycle weapons" hidden>Gear <kbd>B</kbd></button>
+        <button id="jump-tool" class="tool" type="button" aria-label="Jump" hidden>Jump</button>
+      </div>
+      <section id="ride-hud" class="ride-hud" aria-labelledby="ride-title" hidden>
+        <div class="eyebrow" id="ride-line"></div><h2 id="ride-title"></h2><small id="ride-sector"></small>
+        <progress id="ride-progress" max="1" value="0" aria-label="Journey progress"></progress>
+        <div class="ride-actions"><button id="ride-exit" class="tool" type="button" hidden>Disembark <kbd>E</kbd></button><button id="ride-view" class="tool" type="button" hidden>Inside view <kbd>P</kbd></button><button id="ride-extra" type="button" class="tool" hidden>Autopilot event</button></div>
+      </section>
+      <section id="cabin-panel" class="cabin-panel" aria-labelledby="cabin-title" hidden>
+        <div><small class="eyebrow" id="cabin-line">PASSENGER SERVICE</small><h2 id="cabin-title"></h2><p id="cabin-seat"></p></div>
+        <div id="cabin-tv" class="cabin-tv" hidden><small id="cabin-tv-label"></small><output id="cabin-channel">Route map</output><div class="tv-route" aria-hidden="true"><i></i></div></div>
+        <p id="cabin-service" class="cabin-service" role="status" hidden></p>
+        <div class="cabin-actions">
+          <button id="cabin-meal" class="tool" type="button">Meal service</button>
+          <button id="cabin-tv-toggle" class="tool" type="button">Television</button>
+          <button id="cabin-call" class="tool" type="button">Call attendant</button>
+          <button id="cabin-look" class="tool" type="button">Window view</button>
+        </div>
+      </section>
+      <section id="bridge-console" class="bridge-console" aria-labelledby="bridge-name" hidden>
+        <div><small class="eyebrow">CONTROL ROOM</small><h2 id="bridge-name"></h2><output id="bridge-gauge"></output></div>
+        <div class="bridge-actions">
+          <button id="bridge-light" class="tool" type="button" aria-pressed="false">Panel lights</button>
+          <button id="bridge-hold" class="tool" type="button" aria-pressed="false">Heading hold</button>
+          <button id="bridge-chime" class="tool" type="button">Chime</button>
+          <button id="bridge-pan" class="tool" type="button">Look around</button>
+          <button id="bridge-override" class="tool" type="button" hidden>Autopilot event</button>
+        </div>
+      </section>
+      <div id="transit-panel" class="transit-panel" role="dialog" aria-modal="true" aria-labelledby="transit-title" hidden>
+        <div class="transit-sheet">
+          <div class="transit-head"><div><p class="eyebrow" id="transit-kicker"></p><h2 id="transit-title"></h2></div><button type="button" id="transit-close" class="tool" aria-label="Close transit panel">×</button></div>
+          <div id="transit-content" class="transit-content"></div>
+        </div>
+      </div>
+      <section id="dialogue" class="dialogue" role="dialog" aria-labelledby="speaker" hidden>
+        <div class="dialogue-head"><div><div id="speaker-role" class="eyebrow"></div><h2 id="speaker"></h2></div><button id="dialogue-close" type="button" class="tool" aria-label="Close conversation">×</button></div>
+        <p id="speech" aria-live="polite"></p>
+        <div class="player-line" id="player-line" hidden><strong>You</strong><span id="player-reply"></span></div>
+        <div id="dialogue-options"></div>
+      </section>
+      <section id="crash" class="crash" aria-labelledby="crash-title" hidden>
+        <div class="eyebrow"><i></i> FLIGHT INCIDENT</div><h2 id="crash-title">Aircraft wrecked</h2>
+        <p id="crash-details"></p><div><button id="crash-walk" class="tool">Continue on foot</button><button id="crash-recover" class="tool">Recover trainer</button></div>
+      </section>
+      <div id="load-status" role="status"><span>Loading Pacifica Bay…</span></div>
+      <div class="mobile-drive"><button id="mobile-start" type="button" disabled>Start driving</button><a href="#fleet" id="choose-mode">Vehicles &amp; modes ↓</a></div>
+      <div id="result" class="result" hidden>
+        <div class="result-card"><div class="eyebrow"><i></i> PACIFICA BAY</div><h2 id="result-title"></h2><p id="result-details"></p><button id="retry" class="launch">Drive again <span>↗</span></button><button id="back" class="tool">Back to mode select</button></div>
+      </div>
+      <div class="hud-bottom">
+        <div class="map-widget"><div class="map-heading"><span>LOCAL MAP</span><b>N ↑</b></div><svg id="map" viewBox="0 0 154 105" role="img" aria-label="Map of the fictional city and your current position"></svg></div>
+        <div class="view-tools"><button class="tool" id="walk-toggle" aria-label="Walk or board" title="Walk or board (G)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="m10 21 2-6 3 2 1 4m-3-14-2 7m2-7 3 4h4m-7-4-5 3-2 4"/></svg></button><button class="tool" id="switch-vehicle" aria-label="Switch vehicle" title="Switch vehicle (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h17m-4-4 4 4-4 4M21 16H4m4-4-4 4 4 4"/></svg></button><button class="tool" id="camera" aria-label="Change camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2-3h3l2 3h5v13H3V7Z"/><circle cx="12" cy="13" r="3"/></svg></button><button class="tool" id="reset" aria-label="Reset vehicle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a8 8 0 1 1 2 7m-2-7V5m0 6h6"/></svg></button></div>
+        <div class="speedometer"><div class="speed-line"><output id="speed">000</output><div><span>KM/H</span><b id="gear">P</b></div></div><div class="flight-data" id="flight-data" hidden><div><span>ALTITUDE</span><strong><output id="altitude">0</output> m</strong></div><div><span>THROTTLE</span><strong><output id="throttle">0</output>%</strong></div></div><div class="meter" id="meter" aria-hidden="true"></div><div class="speed-foot"><span id="camera-label">CHASE CAM</span><span id="perf">WEBGL</span></div></div>
+      </div>
+      <div id="touch" class="touch" aria-label="Touch driving controls"><div><button data-key="ArrowLeft" aria-label="Steer left">←</button><button data-key="ArrowRight" aria-label="Steer right">→</button></div><div><button data-key="ArrowDown" aria-label="Brake or reverse">↓</button><button data-key="ArrowUp" aria-label="Accelerate">↑</button></div></div>
+      <div id="flight-touch" class="touch" aria-label="Touch flight controls"><div><button data-key="KeyA" aria-label="Bank left">←</button><button data-key="KeyD" aria-label="Bank right">→</button></div><div><button data-key="ArrowUp" aria-label="Pitch up">↑</button><button data-key="ArrowDown" aria-label="Pitch down">↓</button></div><div><button data-key="KeyW" aria-label="Increase throttle">+</button><button data-key="KeyS" aria-label="Decrease throttle">−</button></div><button data-key="Space" aria-label="Brake">BRK</button></div>
+    </section>
+  </main>
+  <script type="module" src="./game.js?v=streets"></script>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  const DEFAULT_LINE_HEIGHT = 16;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  const PICK_CAPABILITIES = ["pick"];
+  const PICK_CHAIN_LENGTH = 4;
+  const PICK_MAX_TEXT_CHARS = 120;
+  const PICK_MAX_HTML_CHARS = 300;
+
+  function truncate(value, maxChars) {
+    return value.length > maxChars ? value.slice(0, maxChars - 1) + "…" : value;
+  }
+
+  function isPickableElement(element) {
+    return (
+      element instanceof Element &&
+      element !== document.documentElement &&
+      element !== document.body
+    );
+  }
+
+  function resolvePickTarget(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const element = document.elementFromPoint(x, y);
+    return isPickableElement(element) ? element.closest("svg") || element : null;
+  }
+
+  function pickLabel(element) {
+    if (element.id) return element.localName + "#" + element.id;
+    return [element.localName].concat(Array.from(element.classList).slice(0, 2)).join(".");
+  }
+
+  // Only attributes that help find the element in source. data-* values and URL
+  // query strings or fragments can carry tokens.
+  const PICK_ATTRIBUTES = new Set([
+    "id",
+    "class",
+    "name",
+    "type",
+    "role",
+    "alt",
+    "aria-label",
+    "href",
+    "src",
+  ]);
+
+  function pickAttributeValue(attribute) {
+    return attribute.name === "href" || attribute.name === "src"
+      ? attribute.value.split(/[?#]/)[0]
+      : attribute.value;
+  }
+
+  function describePickElement(element) {
+    const chain = [];
+    for (
+      let current = element;
+      isPickableElement(current) && chain.length < PICK_CHAIN_LENGTH;
+      current = current.parentElement
+    ) {
+      chain.unshift(current);
+    }
+    const attributes = Array.from(element.attributes)
+      .filter((attribute) => PICK_ATTRIBUTES.has(attribute.name))
+      .map((attribute) => ` ${attribute.name}="${pickAttributeValue(attribute).replace(/"/g, "&quot;")}"`)
+      .join("");
+    const text = (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+    return {
+      chain: chain.map(pickLabel),
+      html: truncate(`<${element.localName}${attributes}>`, PICK_MAX_HTML_CHARS),
+      text: text ? truncate(text, PICK_MAX_TEXT_CHARS) : undefined,
+    };
+  }
+
+  // Hover asks once per frame, and innerText on a large section forces layout,
+  // so only the rect is re-read while the pointer stays on the same element.
+  // Clicks ask for fresh details since the page may have changed the element.
+  let lastPick = null;
+
+  function describePickTarget(element, fresh) {
+    if (fresh || lastPick?.element !== element) {
+      lastPick = { element, details: describePickElement(element) };
+    }
+    const rect = element.getBoundingClientRect();
+    return {
+      rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      ...lastPick.details,
+    };
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      capabilities: PICK_CAPABILITIES,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_PICK") {
+      const element = resolvePickTarget(event.data.x, event.data.y);
+      postToTrustedTop({
+        type: "INLINE_EDIT_PICK_RESULT",
+        seq: event.data.seq,
+        target: element ? describePickTarget(element, event.data.fresh === true) : null,
+      });
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_BY") {
+      const { deltaX, deltaY, deltaMode } = event.data;
+      if (!scrollForwarding || !Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+      if (deltaMode !== 0 && deltaMode !== 1 && deltaMode !== 2) return;
+      const lineHeight =
+        parseFloat(getComputedStyle(document.documentElement).lineHeight) || DEFAULT_LINE_HEIGHT;
+      const scaleX = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerWidth : 1;
+      const scaleY = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerHeight : 1;
+      // The selection overlay receives the wheel event instead of this iframe.
+      // Instant scrolling preserves trackpad deltas even on smooth-scroll sites.
+      window.scrollBy({ left: deltaX * scaleX, top: deltaY * scaleY, behavior: "instant" });
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
+</html>

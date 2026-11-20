@@ -1,0 +1,8 @@
+*,*::before,*::after{box-sizing:border-box}
+body,h1,h2,p,dl,dd{margin:0}
+button{font:inherit;color:inherit}
+button:focus-visible,a:focus-visible{outline:2px solid #7df3cd;outline-offset:3px}
+button:not(:disabled){cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}
+[hidden]{display:none!important}
+svg{display:block}

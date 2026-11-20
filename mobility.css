@@ -1,0 +1,66 @@
+.badge{min-width:66px;padding-block:4px}
+.badge output{color:#ffd3a8}.badge.hot{border-color:#f0a29b;background:#392628}.badge.hot output{color:#ffc0b8}
+.atlas-tool{display:flex;width:100%;margin-top:12px;justify-content:space-between;min-height:42px;color:var(--mint);text-align:left}
+.atlas-tool span{display:inline;flex:1}
+.atlas-tool+.modes{margin-top:17px;padding-top:16px;border-top:1px solid var(--line)}
+.world-tools{position:absolute;display:flex;gap:5px;z-index:3;left:24px;bottom:171px;flex-wrap:wrap;max-width:calc(100% - 48px)}
+.world-tools .tool{min-height:37px;height:auto;padding-inline:9px;gap:5px;background:#172731ec;font-size:var(--xs);white-space:nowrap}
+.world-tools .tool:hover{background:#294c44}
+#jump-tool{display:none}
+.transit-panel{position:absolute;inset:0;display:grid;place-items:center;z-index:12;background:#10182399;padding:18px;backdrop-filter:blur(4px)}
+.transit-sheet{display:flex;flex-direction:column;width:min(100%,602px);max-height:100%;min-height:0;overflow:hidden;background:#121e29f8;border:1px solid #627b81;border-radius:13px;box-shadow:0 20px 60px #061016a6}
+.transit-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:19px 20px 14px;border-bottom:1px solid #3a515c}
+.transit-head .eyebrow{color:var(--mint);font-size:var(--xs);line-height:1.35}
+.transit-head h2,.ride-hud h2,.bridge-console h2{font:800 clamp(1.8rem,5vw,2.52rem)/.98 var(--display);text-transform:uppercase;color:#f3f7ee;margin:5px 0 0}
+#transit-close{flex:none;width:42px;min-height:42px;font-size:1.52rem;padding:0}
+.transit-content{min-height:0;overflow:auto;overscroll-behavior:contain;padding:15px 20px 19px;display:grid;gap:8px;scrollbar-color:#648881 #142431}
+.transit-description,.transit-warning,.product-info{font-size:var(--sm);line-height:1.48;color:#cfddd9;margin:0 0 3px}
+.product-info{margin:3px 0 -2px;color:#b9cccf}
+.transit-warning{color:#ffd2ad;background:#442f2b;padding:7px 9px;border-radius:6px}
+.transit-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;width:100%;padding:8px 10px;text-align:left;color:#eef6f2;background:#1b303c;border:1px solid #516b75;border-radius:6px;line-height:1.15}
+.transit-row:hover,.transit-row.is-selected{background:#234a40;border-color:#92d9bd}.transit-row strong{font-size:var(--sm)}
+.transit-row span{color:#a9decf;font-size:var(--xs);text-align:right;flex-shrink:0;max-width:47%;line-height:1.2}
+.transit-row.is-alt{border-color:#946e60;background:#3a292b}.transit-row.is-alt span{color:#ffc5a5}
+.transit-row:disabled{opacity:.58;cursor:default}
+.ledger-entry{border-left:2px solid #6b9d91;padding:6px 9px;background:#24343e;color:#dfebe7;line-height:1.25}
+.region-tabs{display:flex;gap:5px;flex-wrap:wrap}
+.region-tabs button{padding:5px 8px;color:#dce8e4;border:1px solid #58717d;border-radius:5px;font-size:var(--xs);line-height:1.2;min-height:38px}
+.region-tabs button[aria-pressed=true]{background:#2c3f47;color:var(--zone);border-color:var(--zone)}
+.region-card{background:linear-gradient(110deg,#273b49,#1a2c37);border:1px solid #516a79;border-left:3px solid var(--zone);padding:9px 12px;border-radius:6px}
+.region-card small{display:block;color:var(--zone);letter-spacing:.14em;font-size:var(--xs);font-weight:800}
+.region-card strong{display:block;font:800 1.9rem/1.06 var(--display);color:#f2f6ee;text-transform:uppercase}
+.region-card p{margin-top:3px;font-size:var(--sm);color:#cbdedc}
+.ride-hud{position:absolute;left:50%;top:22px;transform:translateX(-50%);z-index:4;width:min(390px,calc(100% - 35px));padding:12px 14px 10px;border:1px solid #72958e;background:#132531f2;border-radius:8px}
+.ride-hud .eyebrow{color:var(--mint);line-height:1.3}
+.ride-hud h2{font-size:clamp(1.5rem,4.4vw,2rem);margin:3px 0 5px}
+.ride-hud small{color:#c7dcd8;font-size:var(--xs);font-weight:800;letter-spacing:.07em}
+.ride-hud progress{display:block;width:100%;height:7px;appearance:none;color:var(--mint);margin:6px 0}
+.ride-hud progress::-webkit-progress-bar{background:#314a56;border-radius:4px}
+.ride-hud progress::-webkit-progress-value{background:var(--mint);border-radius:4px}
+.ride-actions,.bridge-actions{display:flex;gap:5px;flex-wrap:wrap}
+.ride-actions .tool,.bridge-actions .tool{padding:0 8px;min-height:34px;height:auto;font-size:var(--xs)}
+.bridge-console{position:absolute;left:50%;bottom:31px;transform:translateX(-50%);width:min(490px,calc(100% - 26px));z-index:4;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:10px;padding:10px 12px;background:#152229f5;border:1px solid #718b83;border-radius:10px;box-shadow:0 0 0 4px #17242896}
+.bridge-console .eyebrow{font-size:10px;color:#a8c7c2}
+.bridge-console h2{font-size:1.55rem;margin:1px 0 3px}
+.bridge-console output{color:var(--mint);font-size:var(--sm);font-variant-numeric:tabular-nums}
+.bridge-actions .tool[aria-pressed=true],.deck-lit{background:#25483e;border-color:#91dcb5}
+.chiming{border-color:#f2cb87}
+.sport-court{display:block;width:100%;height:auto;max-height:44vh}
+.sport-status{font-size:var(--sm);font-weight:800;color:var(--mint);margin:0 0 4px}
+.sport-action{margin:6px 0 3px;min-height:43px}
+body.transit-open .hud-bottom,body.transit-open .hud-top,body.transit-open .world-tools,body.transit-open .touch,
+body.riding .objective,body.riding .hud-bottom,body.riding .touch,body.riding #interact,body.riding .world-tools,
+body.dialog-open .world-tools{visibility:hidden}
+@media(pointer:coarse){body.on-foot.playing #jump-tool{display:inline-flex}}
+@media(max-width:950px){.world-tools{left:14px}.world-tools .tool{padding-inline:7px}}
+@media(max-width:720px){
+  .top nav .tool{width:32px;min-height:37px}.top nav .tool svg{width:16px}.badge{min-width:50px}
+  .brand h1{font-size:clamp(1rem,5.4vw,1.7rem)}.brand>svg{width:22px}.brand span{font-size:8px}.top{padding-inline:7px}.top nav{gap:4px}
+  .atlas-tool span{display:inline}.world-tools{bottom:203px;left:14px;right:14px;max-width:none}.world-tools kbd{display:none}
+  .transit-panel{padding:10px}.transit-head{padding:12px 11px 10px}.transit-content{padding:10px 11px 13px;gap:6px}
+  .ride-hud{top:94px}.bridge-console{bottom:140px;grid-template-columns:1fr;gap:5px;padding:7px 9px}
+  .bridge-console h2{font-size:1.28rem;display:inline;margin-right:6px}.bridge-console .eyebrow{display:block}
+  body.riding .bridge-console{bottom:18px}
+  body.on-foot .world-tools{bottom:259px}body.on-foot .interact{bottom:309px}
+}
+@media(max-width:355px){.brand span{display:none}.top nav{gap:3px}.world-tools .tool{min-height:33px}}

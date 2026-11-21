@@ -485,7 +485,8 @@ export function createMobility(api){
   }
   function lawPatrol(dt,w){
     if(!w)return;
-    const star=wanted(),[px,pz]=api.position(),active=state.bounty>=60&&state.phase==='running'&&state.mode==='roam'&&!ride&&!api.isIndoor()&&solidLand(px,pz)&&!api.isFlying()&&!api.isBoating()&&!api.isRail()&&!custody&&grace<=0;
+    const star=wanted(),[px,pz]=api.position(),
+      active=state.bounty>=60&&state.phase==='running'&&state.mode==='roam'&&!custody&&grace<=0;
     leadActive=active;
     if(!active){w.patrol.visible=false;for(const u of pursuit)u.mesh.visible=false;roadOfficer=null;capture=Math.max(0,capture-dt*.7);return}
     if(!w.patrol.visible||Math.hypot(px-sirenX,pz-sirenZ)>95){
@@ -504,11 +505,13 @@ export function createMobility(api){
     if(d>(star?2.5:6)){
       patrolHeading=Math.atan2(dx,-dz);
       const x=sirenX+dx/d*pace*dt,z=sirenZ+dz/d*pace*dt;
-      if(solidLand(x,z)&&!api.hit(x,z,.45,.9)){sirenX=x;sirenZ=z}
+      const allModes=api.isIndoor()||api.isFlying()||api.isBoating()||api.isRail();
+      if(allModes){sirenX=x;sirenZ=z}
+      else if(solidLand(x,z)&&!api.hit(x,z,.45,.9)){sirenX=x;sirenZ=z}
       else if(!api.hit(sirenX,z,.45,.9)&&solidLand(sirenX,z))sirenZ=z;
       else if(!api.hit(x,sirenZ,.45,.9)&&solidLand(x,sirenZ))sirenX=x;
     }
-    w.patrol.position.set(sirenX,.05,sirenZ);w.patrol.rotation.y=-patrolHeading;
+    w.patrol.position.set(sirenX,api.isFlying()?state.altitude*.8:.05,sirenZ);w.patrol.rotation.y=-patrolHeading;
     w.red.visible=Math.floor(uiClock*5)%2===0;w.blue.visible=!w.red.visible;
     const backup=star>2?2:star>1?1:0;
     let nearest=Math.hypot(px-sirenX,pz-sirenZ);
@@ -520,24 +523,29 @@ export function createMobility(api){
       if(i>=backup){u.mesh.visible=false;continue}
       if(!u.mesh.visible||dist>105){
         const spots=[[px,pz-27-i*8],[px+22,pz],[px-22,pz+6],[px,pz+29]];
-        const pos=spots.find(([x,z])=>solidLand(x,z)&&!api.hit(x,z,.45,.95));
+        const pos=spots.find(([x,z])=>api.isIndoor()||api.isFlying()||api.isBoating()||api.isRail()||solidLand(x,z)&&!api.hit(x,z,.45,.95));
         if(!pos){u.mesh.visible=false;continue}
         [u.x,u.z]=pos;u.mesh.visible=true;
       }
       const dx=px-u.x,dz=pz-u.z,near=Math.hypot(dx,dz);
       if(near>3){
         const x=u.x+dx/near*(pace-1)*dt,z=u.z+dz/near*(pace-1)*dt;
-        if(solidLand(x,z)&&!api.hit(x,z,.45,.9)){u.x=x;u.z=z}
+        const allModes=api.isIndoor()||api.isFlying()||api.isBoating()||api.isRail();
+        if(allModes){u.x=x;u.z=z}
+        else if(solidLand(x,z)&&!api.hit(x,z,.45,.9)){u.x=x;u.z=z}
         else if(solidLand(u.x,z)&&!api.hit(u.x,z,.45,.9))u.z=z;
         else if(solidLand(x,u.z)&&!api.hit(x,u.z,.45,.9))u.x=x;
       }
-      u.mesh.position.set(u.x,.05,u.z);u.mesh.rotation.y=-Math.atan2(dx,-dz);
+      u.mesh.position.set(u.x,api.isFlying()?state.altitude*.8:.05,u.z);u.mesh.rotation.y=-Math.atan2(dx,-dz);
       u.lights.forEach((l,j)=>l.visible=(Math.floor(uiClock*5+i)+j)%2===0);
       nearest=Math.min(nearest,near);
     }
     if(star){
       roadOfficer=null;
-      capture=nearest<5.9&&Math.abs(state.speed)<8.5?Math.min(1,capture+dt/(4.2-star*.4)):Math.max(0,capture-dt*.6);
+      const crossMode=api.isIndoor()||api.isFlying()||api.isBoating()||api.isRail();
+      const pursuitDistance=crossMode?(api.isIndoor()?35:api.isFlying()?120:55):5.9;
+      const canCapture=crossMode?(nearest<pursuitDistance&&(!api.isBoating()||state.depth<.9)):nearest<pursuitDistance&&Math.abs(state.speed)<8.5;
+      capture=canCapture?Math.min(1,capture+dt/(4.2-star*.4)):Math.max(0,capture-dt*.6);
       if(capture>=1)book();
       return;
     }

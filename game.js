@@ -973,6 +973,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 window.render_game_to_text=()=>JSON.stringify({...state,coordinates:'+X is east/right; -Z is north; altitude above ground in meters',target:target()??null,
+  economy:social.economy(),
   district:insidePlace?['INDOORS',insidePlace.name]:districtAt(...worldPosition()),loadedDistricts:world?.stream.count()??0,mobility:mobility.inspect(),
   combat:combat.inspect(),
   nearbyAction:interactable?.label??null,nearbyBoat:walking()?nearestBoard()?.id??null:null,wreckPieces:world?.wreck.count()??0,

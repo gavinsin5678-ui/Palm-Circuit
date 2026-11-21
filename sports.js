@@ -1,9 +1,9 @@
 const NS='http://www.w3.org/2000/svg';
 function shape(name,attrs={}){const n=document.createElementNS(NS,name);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);return n}
 const modes={
-  basketball:{name:'Basketball',icon:'01',instruction:'Time the release when the meter is close to the mint band. Land three of five shots to win $45.',court:'#9b604b',line:'#edbb9c',ball:'#f4a06a',target:.51},
-  football:{name:'Football',icon:'02',instruction:'Time the strike on the mint band to send the ball away from the moving keeper. Score three of five for $45.',court:'#365d3f',line:'#c0d2a8',ball:'#f2e9d3',target:.53},
-  tennis:{name:'Tennis',icon:'03',instruction:'Return the incoming ball as it reaches the mint band. Make three of five returns to win $45.',court:'#344f76',line:'#aec5e4',ball:'#dcee7a',target:.67}
+  basketball:{name:'Basketball',icon:'01',instruction:'Time five releases against the court AI. Finish ahead on the scoreboard to win $45.',court:'#9b604b',line:'#edbb9c',ball:'#f4a06a',target:.51,opponent:.62},
+  football:{name:'Football',icon:'02',instruction:'Take five strikes against the moving keeper. Finish with more goals than the keeper AI to win $45.',court:'#365d3f',line:'#c0d2a8',ball:'#f2e9d3',target:.53,opponent:.58},
+  tennis:{name:'Tennis',icon:'03',instruction:'Play five returns in a tennis match. Win more points than the opponent to earn $45.',court:'#344f76',line:'#aec5e4',ball:'#dcee7a',target:.67,opponent:.66}
 };
 const line=(x1,y1,x2,y2,stroke='#f0e9d0',w=2)=>shape('line',{x1,y1,x2,y2,stroke,'stroke-width':w});
 const rect=(x,y,w,h,fill,other={})=>shape('rect',{x,y,width:w,height:h,fill,...other});
@@ -20,7 +20,7 @@ export function sportsCard(id,pay){
   root.append(scoreboard,svg,shoot);
   svg.append(rect(0,0,640,313,'#14252f'),rect(14,14,612,238,mode.court,{rx:8}),rect(39,31,562,207,'none',{stroke:mode.line,'stroke-width':2,rx:4}));
   const shadow=shape('ellipse',{cx:320,cy:216,rx:17,ry:4,fill:'#18222b55'}),ball=circle(320,208,10,mode.ball,{stroke:'#25313b','stroke-width':2});
-  let keeper=null,racket=null,hit=0,round=0,feedback='Get ready',time=0,travel=0,success=false,angle=0,finished=false,resultPaid=false,started=false;
+  let keeper=null,racket=null,hit=0,opponent=0,round=0,feedback='Get ready',time=0,travel=0,success=false,angle=0,finished=false,resultPaid=false,started=false;
   if(id==='basketball'){
     svg.append(line(0,176,640,176,mode.line,3),shape('path',{d:'M172 237L245 159H395L468 237 M205 218Q318 154 435 218',stroke:mode.line,'stroke-width':3,fill:'none'}),rect(309,52,22,102,'#526171'),rect(267,49,106,68,'#d3dce1',{rx:4,stroke:'#263746','stroke-width':4}),rect(298,68,44,32,'none',{stroke:'#555e65','stroke-width':3}),shape('path',{d:'M294 102Q320 91 346 102L336 128H304Z',fill:'#e9ecdc65',stroke:'#e9ecdc','stroke-width':2}),shape('ellipse',{cx:320,cy:102,rx:27,ry:6,fill:'none',stroke:'#e77452','stroke-width':5}));
   }else if(id==='football'){
@@ -41,7 +41,7 @@ export function sportsCard(id,pay){
   const windowCenter=()=>clamp(mode.target+Math.sin(round*2.1)*.115,.27,.79);
   const position=()=>{const q=(time*(.53+round*.034)+.13)%2;return q<=1?q:2-q};
   function refresh(){
-    const caption=finished?`${hit} of 5 · ${hit>=3?'Challenge won · $45 prize':'Round complete · Try for three'}`:`${hit} scored · Attempt ${round+1}/5 · ${feedback}`;
+    const caption=finished?`You ${hit} · Opponent ${opponent} · ${hit>opponent?'Match won · $45 prize':'Match lost · Replay to win'}`:`You ${hit} · Opponent ${opponent} · Attempt ${round+1}/5 · ${feedback}`;
     if(scoreboard.textContent!==caption)scoreboard.textContent=caption;
     zone.setAttribute('x',65+510*windowCenter()-29);zone.setAttribute('width',58);dot.setAttribute('x',65+510*position());
     if(keeper)keeper.setAttribute('transform',`translate(${320+Math.sin(time*5.1)*65} 117)`);
@@ -56,7 +56,7 @@ export function sportsCard(id,pay){
     shadow.setAttribute('cx',x);shadow.setAttribute('cy',Math.min(226,y+16));
   }
   function action(){
-    if(finished){hit=round=0;feedback='New round';time=travel=0;finished=false;resultPaid=false;shoot.textContent=id==='basketball'?'Release shot':id==='football'?'Take shot':'Return ball';refresh();return}
+    if(finished){hit=opponent=round=0;feedback='New match';time=travel=0;finished=false;resultPaid=false;shoot.textContent=id==='basketball'?'Release shot':id==='football'?'Take shot':'Return ball';refresh();return}
     if(travel>0)return;
     const p=position(),center=windowCenter();
     success=Math.abs(p-center)<.113;
@@ -69,13 +69,20 @@ export function sportsCard(id,pay){
       travel+=dt;
       if(travel>.61){
         hit+=Number(success);round++;feedback=success?(id==='tennis'?'Clean return':'On target'):(id==='football'?'Shot saved':'Missed');
+        const aiSeed=(time*7.31+round*1.73)%1;
+        const aiSuccess=aiSeed<mode.opponent;
+        opponent+=Number(aiSuccess);
+        if(!aiSuccess&&id==='football')feedback+=' · Keeper beaten';
         travel=0;
-        if(round===5){finished=true;shoot.textContent='Play again';if(hit>=3&&!resultPaid){resultPaid=true;pay(45)}}
+        if(round===5){
+          finished=true;shoot.textContent='Play again';
+          if(hit>opponent&&!resultPaid){resultPaid=true;pay(45)}
+        }
       }
     }else time+=dt;
     refresh();
   }
   shoot.addEventListener('click',action);refresh();
-  return {root,step,action,status:()=>({id,round,hit,finished,started,meter:position(),center:windowCenter()})};
+  return {root,step,action,status:()=>({id,round,hit,opponent,finished,started,meter:position(),center:windowCenter()})};
 }
 export const sportModes=modes;

@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {person,animatePerson} from './life-world.js?v=streets';
+import {person,animatePerson} from './life-world.js?v=articulated-physics';
 
 export const sportModes={
   basketball:{name:'Basketball',icon:'1v1 · shoot and defend',instruction:'Move into the court and face the hoop. Press X to shoot; the first player to score three baskets wins.',action:'Shoot'},

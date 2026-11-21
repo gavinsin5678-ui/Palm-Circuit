@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {addLifeWorld,makeWreck,person,beachAccess} from './life-world.js?v=streets';
+import {addLifeWorld,makeWreck,person,beachAccess} from './life-world.js?v=articulated-physics';
 
 export const roadsX = [-144,-96,-48,0], roadsZ = [-144,-96,-48,0,48,96];
 export const runway = {x:-195,z:92,width:22,north:-161,south:117};
@@ -32,6 +32,24 @@ let activeOwner=null;
 const destroyedBuildings=new Set(), buildingDamage=new Map(), ownerInstances=new Map(), rubbleById=new Set();
 function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296}
 function pick(xs){return xs[Math.floor(rand()*xs.length)]}
+function detailMap(seedValue,repeat){
+  const cvs=document.createElement('canvas');cvs.width=cvs.height=128;
+  const ctx=cvs.getContext('2d'),image=ctx.createImageData(128,128);let n=seedValue>>>0;
+  for(let i=0;i<image.data.length;i+=4){
+    n=(Math.imul(n,1664525)+1013904223)>>>0;
+    const v=128+(n>>>24)*.34;
+    image.data[i]=image.data[i+1]=image.data[i+2]=v;image.data[i+3]=255;
+  }
+  ctx.putImageData(image,0,0);
+  const texture=new T.CanvasTexture(cvs);texture.wrapS=texture.wrapT=T.RepeatWrapping;
+  texture.repeat.set(repeat,repeat);texture.anisotropy=4;return texture;
+}
+let concreteMaterial,metalMaterial;
+function initSurfaceMaterials(){
+  const concreteNoise=detailMap(831,8),metalNoise=detailMap(1273,5);
+  concreteMaterial=mat('#ffffff',{roughness:.94,roughnessMap:concreteNoise,bumpMap:concreteNoise,bumpScale:.018});
+  metalMaterial=mat('#ffffff',{metalness:.64,roughness:.4,roughnessMap:metalNoise,bumpMap:metalNoise,bumpScale:.007});
+}
 const buildingId=(x,z)=>`${x.toFixed(2)}/${z.toFixed(2)}`;
 function add(g,m,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0){
   const id=`${g.id}/${m.id}`;
@@ -43,6 +61,8 @@ function plane(x,y,z,w,d,c,m=regular){add(roadGeo,m,x,y,z,w,1,d,c)}
 function bake(scene){
   for(const {g,m,items} of batches.values()){
     const set=new T.InstancedMesh(g,m,items.length);
+    set.castShadow=g===palmLeaf;
+    set.receiveShadow=!!m.userData.receiveShadow;
     items.forEach(([x,y,z,w,h,d,c,rx,ry,rz,owner],i)=>{
       dummy.position.set(x,y,z);dummy.scale.set(w,h,d);dummy.rotation.set(rx,ry,rz);dummy.updateMatrix();
       if(owner&&destroyedBuildings.has(owner))dummy.scale.set(0,0,0),dummy.updateMatrix();
@@ -78,7 +98,8 @@ function roadMaterial(){
   }
   const texture=new T.CanvasTexture(cvs);texture.colorSpace=T.SRGBColorSpace;
   texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.repeat.set(5,5);texture.anisotropy=4;
-  return mat('#ffffff',{map:texture});
+  const detail=detailMap(317,7),material=mat('#ffffff',{map:texture,roughness:.92,roughnessMap:detail,bumpMap:detail,bumpScale:.012});
+  material.userData.receiveShadow=true;return material;
 }
 function shadow(scene){
   const c=document.createElement('canvas');c.width=c.height=64;
@@ -109,9 +130,9 @@ function palm(x,z,s=1){
 }
 function lamps(x,z,right){
   const d=right?-1:1;
-  box(x,2.85,z,.16,5.7,.16,'#596878');
-  box(x+d*.58,5.62,z,1.28,.13,.16,'#596878');
-  box(x+d*1.17,5.56,z,.64,.16,.3,'#626979');
+  box(x,2.85,z,.16,5.7,.16,'#596878',metalMaterial);
+  box(x+d*.58,5.62,z,1.28,.13,.16,'#596878',metalMaterial);
+  box(x+d*1.17,5.56,z,.64,.16,.3,'#626979',metalMaterial);
   box(x+d*1.17,5.464,z,.53,.025,.23,'#ffe4a5',emissive);
 }
 function building(x,z,w,d,h,c,style,lite=false,owner=null){
@@ -229,7 +250,7 @@ function makeCar(paint, hero=false){
   if(hero){block(1.89,.065,.27,0,1.00,1.81,body);for(const x of [-.63,.63]) block(.11,.12,.12,x,.94,1.81,dark)}
   const wheels=[], tire=new T.CylinderGeometry(.37,.37,.27,16), rim=new T.CylinderGeometry(.215,.215,.277,10);
   for(const x of [-.94,.94]) for(const z of [-1.38,1.31]){
-    const mount=new T.Group();mount.position.set(x,.375,z);car.add(mount);wheels.push({mount,front:z<0});
+    const mount=new T.Group();mount.position.set(x,.375,z);mount.userData.suspensionWheel={left:x<0,front:z<0,baseY:.375};car.add(mount);wheels.push({mount,front:z<0});
     const t=new T.Mesh(tire,dark);t.rotation.z=Math.PI/2;mount.add(t);
     if(hero){const r=new T.Mesh(rim,trim);r.rotation.z=Math.PI/2;mount.add(r);for(let i=0;i<5;i++){const bolt=new T.Mesh(baseGeo,dark);bolt.scale.set(.03,.055,.17);bolt.position.x=Math.sign(x)*.143;bolt.rotation.x=i*Math.PI/2.5;mount.add(bolt)}}
   }
@@ -313,7 +334,7 @@ function makeTile(i,j,paving){
   for(const u of vertical){
     if(airport&&u===120)continue;
     plane(u,.010,72,14.8,144,asphalt,paving);
-    for(const off of [-8,8])plane(u+off,.027,72,.7,144,sidewalk);
+    for(const off of [-8,8])plane(u+off,.027,72,.7,144,sidewalk,concreteMaterial);
     for(let z=1.5;z<144;z+=4.8)if(![24,72,120].some(k=>Math.abs(k-z)<8)){
       plane(u-.22,.049,z,.13,2.45,'#e8bb74');plane(u+.22,.049,z,.13,2.45,'#e8bb74');
     }
@@ -456,10 +477,15 @@ function createStream(scene,paving,baseSolids,ocean){
 }
 export function createWorld(){
   seed=10;
+  initSurfaceMaterials();
   const scene=new T.Scene();scene.fog=new T.FogExp2('#ae8991',.0043);
   const sky=atmosphere(scene), solids=[];
   const hemi=new T.HemisphereLight('#d4e3ff','#967568',2.14);scene.add(hemi);
-  const sun=new T.DirectionalLight('#ffd3a2',2.1);sun.position.set(65,37,-75);scene.add(sun);
+  const sun=new T.DirectionalLight('#ffd3a2',2.1);
+  sun.position.set(65,37,-75);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);
+  Object.assign(sun.shadow.camera,{left:-58,right:58,top:58,bottom:-58,near:.1,far:190});
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.shadow.bias=-.00015;sun.shadow.normalBias=.025;sun.shadow.radius=2;scene.add(sun);
   const bounce=new T.DirectionalLight('#a6cfe6',.35);bounce.position.set(-25,13,57);scene.add(bounce);
   plane(-68.75,-.052,-24,198.5,288,'#648277');
   plane(20,-.036,-24,21,288,'#c9ad84');
@@ -467,7 +493,7 @@ export function createWorld(){
   const paving=roadMaterial();
   for(const x of roadsX){
     plane(x,.01,-24,14.8,288,asphalt,paving);
-    for(const off of [-8,8]) {plane(x+off,.045,-24,1.19,288,sidewalk);plane(x+off*.82,.038,-24,.16,288,'#dee3d5')}
+    for(const off of [-8,8]) {plane(x+off,.045,-24,1.19,288,sidewalk,concreteMaterial);plane(x+off*.82,.038,-24,.16,288,'#dee3d5',metalMaterial)}
     for(let z=-164;z<119;z+=4.8) if(!roadsZ.some(zz=>Math.abs(z-zz)<9)){
       plane(x-.22,.047,z,.13,2.45,'#e8bb74');plane(x+.22,.047,z,.13,2.45,'#e8bb74');
     }

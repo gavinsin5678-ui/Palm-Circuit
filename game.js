@@ -1,16 +1,16 @@
 import * as T from './vendor/three.module.min.js';
-import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} from './world.js?v=streets';
+import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} from './world.js?v=surface-detail';
 import wasm from './drive-wasm.js?v=airfield';
-import {parking,beachAccess,dockHeight,waveHeight,animatePerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=streets';
+import {parking,beachAccess,dockHeight,waveHeight,animatePerson,ragdollPerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=articulated-physics';
 import {createSocial} from './social.js?v=connections';
 import {createMobility} from './mobility.js?v=gameplay-overhaul';
 import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
 import {makeTerminal,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
-import {fleetProducts} from './fleet.js?v=fleet-variants';
-import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=gameplay-overhaul';
-import {createCombat} from './combat.js?v=gameplay-overhaul';
-import {flightEnvelope,coordinatedTurnRate,stepWatercraft} from './vehicle-physics.js?v=handling';
+import {fleetProducts,vehicleDynamics} from './fleet.js?v=road-dynamics';
+import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=road-suspension';
+import {createCombat} from './combat.js?v=ragdoll-physics';
+import {flightEnvelope,coordinatedTurnRate,stepWatercraft,stepSpringDamper} from './vehicle-physics.js?v=suspension-model';
 import {createAirDefense} from './air-defense.js?v=hijack';
 
 const $=id=>document.getElementById(id), viewport=$('viewport');
@@ -45,6 +45,8 @@ const ability=(...ids)=>state.ability>0&&ids.includes(variant(state.vehicle)?.ab
 for(const [id,p] of Object.entries(fleetProducts))vehicleName[id]=p.name;
 const state={mode:'roam',vehicle:'car',phase:'ready',time:0,elapsed:0,checkpoint:0,camera:0,x:3.5,z:75,heading:0,speed:0,vx:0,vz:0,steer:0,hit:0,hits:0,
   altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,waterY:0,waterVertical:0,
+  suspension:[0,0,0,0],suspensionVelocity:[0,0,0,0],suspensionY:0,bodyPitch:0,bodyRoll:0,yawSpin:0,sideVelocity:0,tireSlip:0,
+  footLean:0,footAcceleration:0,trafficHitCooldown:0,suspensionVehicle:'',
   vehicleHealth:110,hijackedAirliner:false,hijackTime:0,hijackBountyTick:0,
   cash:75,bankBalance:0,bankLoans:[],bankRobberies:{},heat:0,bounty:0,owned:[],gadget:null,jump:0,track:0,railY:0,ability:0,abilityCool:0,signal:null,
   job:'available',collected:0,fins:false,dialogue:null,swimming:false,interior:null,message:'',messageTime:0,crash:null};
@@ -78,6 +80,9 @@ const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);
 const streetPropAt=(x,z)=>world?.arch.props.find(p=>Math.hypot(p.x-x,p.z-z)<1.9);
 const clearKeys=()=>{keys.clear();touchKeys.clear()};
 const shift=()=>action('ShiftLeft','ShiftRight');
+function enableDirectionalShadow(root,receive=false){
+  root.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=receive}});
+}
 const cameraName=()=>mobility.cockpit()?(mobility.ride()?.pilotControl?'Flight Deck':mobility.ride()?'Passenger Cabin':'Control Room'):(flying()?airCameras:rail()?['Rail Chase','Driver Cab','Survey Cam']:walking()?footCameras:boating()?waterCameras:cameras)[state.camera];
 const launchTitle=()=>flying()?'Start flying':walking()?'Start exploring':boating()?'Set sail':rail()?'Drive Railcar':'Start driving';
 const endTitle=()=>flying()?'End flight':walking()?'End walk':boating()?'Moor boat':rail()?'Park Railcar':'End drive';
@@ -87,7 +92,7 @@ const districtAt=(x,z)=>{const island=islandAt(x,z);return island?[island.tag,is
 const mobility=createMobility({state,social,refresh,syncSelection,clearKeys,position:worldPosition,focus:()=>focusView(false),snap:()=>{snap=true},
   sync:syncSelection, sound:playChime,startRide,ridePosition,endRide,driveTransitVehicle,hit:solidHit,isIndoor:()=>!!indoor,isWalking:walking,isRoadVehicle:motoring,isFlying:flying,isBoating:boating,isRail:rail,
   venue:()=>indoor?.zone?indoor:null,enterVenue,leaveVenue,goRunway,takeoverAircraft,
-  damagePlayer,stunPlayer:duration=>{stunTimer=Math.max(stunTimer,duration)},helicopterHit:()=>flying()?flightCrash('Police helicopter strike',state.x,state.z,state.altitude,false):damagePlayer(17,'Police helicopter gunfire'),
+  damagePlayer,    stunPlayer:duration=>{stunTimer=Math.max(stunTimer,duration);const actor=indoor?.player??world?.life?.player;if(actor)ragdollPerson(actor,{x:Math.sin(state.heading)*4,z:-Math.cos(state.heading)*4},duration,simTime)},helicopterHit:()=>flying()?flightCrash('Police helicopter strike',state.x,state.z,state.altitude,false):damagePlayer(17,'Police helicopter gunfire'),
   actorVital:p=>combat.vital(p),wardActions:p=>combat.wardActions(p),expose:p=>combat.expose(p),aid:p=>combat.aid(p)});
 const combat=createCombat({state,walking,actors:combatActors,scene:()=>indoor?.scene??world?.scene,
   blocked:()=>mobility.panel()||mobility.ride()||mobility.detained()||mobility.sporting()||indoor?.zone==='arena',
@@ -115,6 +120,11 @@ function combatLineClear(a,b){
 }
 function damagePlayer(amount,source='impact',instant=false){
   if(state.phase==='dead'||state.vitality<=0)return;
+  const actor=indoor?.player??world?.life?.player;
+  if(walking()&&!instant&&actor){
+    ragdollPerson(actor,{x:Math.sin(state.heading)*3.2,z:-Math.cos(state.heading)*3.2},.9,simTime);
+    stunTimer=Math.max(stunTimer,.24);
+  }
   state.vitality=instant?0:Math.max(0,state.vitality-Math.max(0,amount));
   if(state.vitality<=0){playerDeath(source);return}
   if(state.vitality<31)social.notice('Critical health · Get away from danger.');
@@ -197,6 +207,8 @@ function resetCar(loc=null){
   const [x,z,h]=loc??stock;
   if(boating())boatParking[state.vehicle]=[x,z,h];
   Object.assign(state,{x,z,heading:h,speed:0,vx:0,vz:0,hit:0,steer:0,
+    suspension:[0,0,0,0],suspensionVelocity:[0,0,0,0],suspensionY:0,bodyPitch:0,bodyRoll:0,yawSpin:0,sideVelocity:0,tireSlip:0,
+    footLean:0,footAcceleration:0,trafficHitCooldown:0,suspensionVehicle:state.vehicle,
     altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
     crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0,waterY:waveHeight(x,z,simTime),waterVertical:0,
     vehicleHealth:vehicleMaxHealth(state.vehicle),hijackedAirliner:false,hijackTime:0,hijackBountyTick:0});
@@ -645,7 +657,7 @@ function updatePlane(dt){
   state.x=x;state.z=z;state.altitude=Math.max(0,y);state.airborne=y>.025||(air&&y>0);
 }
 function updateWalk(dt){
-  if(stunTimer>0){state.speed=0;return}
+  if(stunTimer>0){state.speed=0;state.footAcceleration=0;return}
   const {x,z}=state;
   const wet=!indoor&&!solidLand(x,z)&&dockHeight(x,z)===null;
   if(state.jump>0||jumpVelocity>0){
@@ -657,7 +669,11 @@ function updateWalk(dt){
   state.heading=(state.heading+steer*dt*(wet?1.87:2.6))%(Math.PI*2);
   const m=wet?(state.fins?3.40:2.42):shift()?7.25:4.60;
   const aim=axes*m*(axes<0?.60:1);
-  state.speed+=(aim-state.speed)*Math.min(1,dt*10.8);
+  const previousSpeed=state.speed,response=wet?3.8:shift()?5.6:4.7;
+  state.speed+=(aim-state.speed)*(1-Math.exp(-response*dt));
+  state.footAcceleration=(state.speed-previousSpeed)/Math.max(dt,.001);
+  const leanTarget=Math.max(-.25,Math.min(.25,-steer*Math.min(.25,Math.abs(state.speed)*.034)));
+  state.footLean+=(leanTarget-state.footLean)*(1-Math.exp(-dt*7));
   const sx=Math.sin(state.heading)*state.speed*dt,sz=(-Math.cos(state.heading)*state.speed+(indoor?.belt?.(x,z)??0)*2.2)*dt;
   const blocked=(a,b)=>{
     if(indoor)return Math.abs(a)>indoor.w-.30||Math.abs(b)>indoor.d-.24||indoor.blocked?.(a,b)||state.jump<.78&&indoor.points.some(p=>Math.abs(a-p.x)<p.w+.20&&Math.abs(b-p.z)<p.d+.20);
@@ -666,6 +682,17 @@ function updateWalk(dt){
   };
   if(!blocked(x+sx,z))state.x+=sx;
   if(!blocked(state.x,z+sz))state.z+=sz;
+  state.trafficHitCooldown=Math.max(0,state.trafficHitCooldown-dt);
+  if(state.trafficHitCooldown===0){
+    const impact=world.traffic.find(t=>Math.abs(t.mesh.position.x-state.x)<1.02&&Math.abs(t.mesh.position.z-state.z)<1.02);
+    if(impact&&Math.abs(impact.v)>3){
+      state.trafficHitCooldown=.92;impact.pause=Math.max(impact.pause??0,.45);
+      damagePlayer(Math.max(4,(impact.v-2)*1.35),'Traffic collision');
+      const actor=indoor?.player??world.life.player;
+      ragdollPerson(actor,{x:impact.axis==='x'?impact.dir*impact.v:0,z:impact.axis==='z'?impact.dir*impact.v:0},1.25,simTime);
+      stunTimer=Math.max(stunTimer,.65);state.speed*=-.18;
+    }
+  }
   state.swimming=!indoor&&!solidLand(state.x,state.z)&&dockHeight(state.x,state.z)===null;
   if(state.swimming){state.jump=0;jumpVelocity=0}
 }
@@ -740,6 +767,47 @@ function updateBoat(dt){
   const targetY=waveHeight(state.x,state.z,simTime),buoyancy=(targetY-state.waterY)*8.5-state.waterVertical*5.3;
   state.waterVertical+=buoyancy*dt;state.waterY+=state.waterVertical*dt;
 }
+function advanceSuspension(dt,dynamics,acceleration,steer,onRoad){
+  if(state.suspensionVehicle!==state.vehicle){
+    state.suspension=[0,0,0,0];state.suspensionVelocity=[0,0,0,0];
+    state.suspensionY=state.bodyPitch=state.bodyRoll=state.yawSpin=state.sideVelocity=state.tireSlip=0;
+    state.suspensionVehicle=state.vehicle;
+  }
+  const travel=dynamics.suspension,rest=travel*.48,frontLoad=Math.max(-.035,Math.min(.075,-acceleration*.0048)),
+    rearLoad=Math.max(-.035,Math.min(.075,acceleration*.0042)),sideLoad=Math.max(-.045,Math.min(.045,steer*Math.abs(state.speed)*.0011));
+  let front=0,rear=0,left=0,right=0,total=0;
+  for(let i=0;i<4;i++){
+    const isFront=i<2,isLeft=i%2===0;
+    const wx=state.x+(isLeft?-.9:.9),wz=state.z+(isFront?-1.35:1.35);
+    const rough=(onRoad?.012:.035)*(Math.sin(wx*1.71+wz*.63)+Math.sin(wz*2.13-wx*.37))*.5;
+    const target=Math.max(0,Math.min(travel,rest+rough+(isFront?frontLoad:rearLoad)+(isLeft?sideLoad:-sideLoad)));
+    const spring=stepSpringDamper(state.suspension[i],state.suspensionVelocity[i],target,dynamics.spring,dynamics.damping,dt);
+    state.suspensionVelocity[i]=spring.velocity;
+    state.suspension[i]=Math.max(0,Math.min(travel,spring.position));
+    total+=state.suspension[i];
+    if(isFront)front+=state.suspension[i];else rear+=state.suspension[i];
+    if(isLeft)left+=state.suspension[i];else right+=state.suspension[i];
+  }
+  const heave=(rest-total/4)*.42,pitchTarget=Math.max(-.16,Math.min(.16,(rear-front)*.55+acceleration*.004)),
+    rollTarget=Math.max(-.25,Math.min(.25,(right-left)*.74-steer*Math.min(.16,Math.abs(state.speed)*.0032)*dynamics.roll/.16));
+  state.suspensionY+=(heave-state.suspensionY)*Math.min(1,dt*8);
+  state.bodyPitch+=(pitchTarget-state.bodyPitch)*Math.min(1,dt*7);
+  state.bodyRoll+=(rollTarget-state.bodyRoll)*Math.min(1,dt*8);
+}
+function poseSuspensionWheels(wheels,dynamics,active,dt=0,steer=0,speed=0){
+  if(!wheels?.length)return;
+  const rest=dynamics.suspension*.48;
+  for(const entry of wheels){
+    const wheel=entry.mount??entry,info=wheel.userData?.suspensionWheel;
+    if(!info)continue;
+    const index=info.front?(info.left?0:1):(info.left?2:3);
+    wheel.position.y=info.baseY+(active?(state.suspension[index]-rest)*.45:0);
+    wheel.rotation.x=active?wheel.rotation.x-speed*dt/.37:0;
+    if(wheel.isGroup){
+      wheel.rotation.y=active&&info.front?-steer*.30:0;
+    }
+  }
+}
 function updateTrain(dt){
   const p=variant(state.vehicle),forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),
     metroRegen=ability('metro-regen'),brake=action('Space')||ability('regen')||metroRegen&&!forward;
@@ -798,25 +866,39 @@ function update(dt){
   const steer=Number(action('KeyD','ArrowRight'))-Number(action('KeyA','ArrowLeft'));
   const onRoad=roadSurface(state.x,state.z);
   const mod=variant(state.vehicle),roughGrip=['terrain-lock','scrambler-grip','sand-skim','bus-allterrain'].some(id=>ability(id)),
+    handling=mod?.dynamics??vehicleDynamics[modelOf(state.vehicle)]??vehicleDynamics.car,
     taxiBoost=ability('taxi-sprint')&&accelerating,busBoost=ability('bus-turbo')&&accelerating&&onRoad&&Math.abs(steer)<.22,
     cornerBoost=accelerating&&(ability('passing-burst')&&Math.abs(steer)>.18||ability('corner-launch')&&Math.abs(steer)<.42&&Math.abs(state.steer)>.32),
     ratio=(mod?.power??(state.vehicle==='sport'||state.vehicle==='gravity'?1.23:state.vehicle==='van'?.72:1))*
       (state.vehicle==='jet'&&state.ability>0?1.60:1)*(taxiBoost?1.24:1)*(busBoost?1.18:1)*(cornerBoost?1.20:1)*
       (.52+.48*(state.vehicleHealth??vehicleMaxHealth(state.vehicle))/vehicleMaxHealth(state.vehicle));
+  const speedBefore=state.speed;
   state.speed=core.longitudinal(state.speed/ratio,+accelerating,+braking,+action('Space'),onRoad||ability('grip')||roughGrip?1:.56,dt*(state.vehicle==='van'?.86:1))*ratio;
   if(ability('launch')&&accelerating&&state.speed<12)state.speed+=dt*8;
   if(ability('anchor')&&braking&&state.speed>0)state.speed=Math.max(0,state.speed-dt*14);
   if(ability('bus-airbrake')&&(braking||action('Space'))&&state.speed>0)state.speed=Math.max(0,state.speed-dt*19);
   if(ability('rescue-brake')&&(braking||action('Space'))&&state.speed>0)state.speed=Math.max(0,state.speed-dt*12);
   if(state.vehicle==='jet'&&state.ability>0&&!braking&&!drift)state.speed=Math.min(67,state.speed+dt*15);
+  const longitudinalAccel=Math.max(-14,Math.min(10,(state.speed-speedBefore)/Math.max(dt,.001)));
   const turnBoost=ability('cornering')?1.28:ability('taxi-evasion')?1.25:ability('bank')?1.40:1;
   const damageHandling=.55+.45*(state.vehicleHealth??vehicleMaxHealth(state.vehicle))/vehicleMaxHealth(state.vehicle);
   state.heading=(state.heading+core.yaw_rate(state.speed,steer,+drift)*dt*(mod?.steer??(state.vehicle==='van'?.70:state.vehicle==='sport'?1.12:1))*turnBoost*damageHandling*
-    (ability('race-drift')&&drift?1.18:ability('taxi-drift')&&drift?1.32:1))%(Math.PI*2);
+    (ability('race-drift')&&drift?1.18:ability('taxi-drift')&&drift?1.32:1)+state.yawSpin*dt)%(Math.PI*2);
+  state.yawSpin*=Math.exp(-dt*2.65);
   state.steer+=(steer-state.steer)*Math.min(1,dt*10);
-  const traction=Math.min(1,core.grip(state.speed,+drift,dt)*(ability('grip')?1.55:roughGrip?1.42:ability('cornering')&&steer?1.18:1));
-  state.vx+=(Math.sin(state.heading)*state.speed-state.vx)*traction;
-  state.vz+=(-Math.cos(state.heading)*state.speed-state.vz)*traction;
+  const drifting=Math.abs(state.speed)>8&&(drift||Math.abs(state.steer*state.speed)>12),
+    sideTarget=drifting?state.steer*Math.min(6,Math.abs(state.speed)*.22):0,
+    slipResponse=drifting?2.2:handling.grip;
+  state.sideVelocity+=(sideTarget-state.sideVelocity)*(1-Math.exp(-dt*slipResponse));
+  const slipAngle=Math.atan2(Math.abs(state.sideVelocity),Math.max(2,Math.abs(state.speed))),
+    slipThreshold=drifting?.14:.075;
+  state.tireSlip=Math.max(0,Math.min(1,(slipAngle-slipThreshold)/.48));
+  const traction=Math.min(1,core.grip(state.speed,+drift,dt)*(handling.grip/8.2)*(1-state.tireSlip*.18)*
+    (ability('grip')?1.55:roughGrip?1.42:ability('cornering')&&steer?1.18:1));
+  const forwardX=Math.sin(state.heading),forwardZ=-Math.cos(state.heading),sideX=Math.cos(state.heading),sideZ=Math.sin(state.heading),
+    targetVx=forwardX*state.speed+sideX*state.sideVelocity,targetVz=forwardZ*state.speed+sideZ*state.sideVelocity;
+  state.vx+=(targetVx-state.vx)*traction;
+  state.vz+=(targetVz-state.vz)*traction;
   const oldX=state.x,oldZ=state.z,x=state.x+state.vx*dt,z=state.z+state.vz*dt,impactSpeed=Math.hypot(state.vx,state.vz),prop=streetPropAt(x,z);
   if(!invalid(x,z)&&!prop){state.x=x;state.z=z}
   else{
@@ -825,9 +907,19 @@ function update(dt){
     if(Math.abs(state.speed)>2.5&&state.hit===0){
       state.hits++;state.hit=.72;
       const other=trafficAt(x,z);
-      if(other)mobility.collision(other,Math.abs(state.speed),accelerating);
+      if(other){
+        mobility.collision(other,Math.abs(state.speed),accelerating);
+        const transferred=other.axis==='x'?state.vx:state.vz;
+        if(Math.abs(transferred)>.1){
+          other.dir=Math.sign(transferred);other.v=Math.min(18,Math.max(other.v,Math.abs(transferred)*.72));
+          other.pause=Math.min(other.pause??0,.35);
+        }
+      }
       if(prop){prop.vx+=state.vx*.48;prop.vz+=state.vz*.48;prop.vy=Math.max(prop.vy,2.4)}
-      if(damageVehicle(impactSpeed,other?'Traffic collision':prop?'Street-object collision':'Building collision'))return;
+      state.yawSpin+=Math.sign(state.sideVelocity||state.steer||1)*Math.min(1.45,impactSpeed*.038/handling.mass);
+      state.suspensionVelocity??=[0,0,0,0];
+      state.suspensionVelocity[0]+=.32;state.suspensionVelocity[1]+=.32;
+      if(damageVehicle(impactSpeed/handling.mass,other?'Traffic collision':prop?'Street-object collision':'Building collision'))return;
     }
     state.speed*=ability('buffer')?0:ability('impact-cushion')?-.08:ability('taxi-evasion')?-.14:-.24;state.vx*=.16;state.vz*=.16;
   }
@@ -838,6 +930,7 @@ function update(dt){
       state.speed*=impactFactor;state.vx*=impactFactor;state.vz*=impactFactor;
     }
   }
+  advanceSuspension(dt,handling,longitudinalAccel,state.steer,onRoad);
   mobility.runSignals(simTime,dt,world,oldX,oldZ);
   const next=target();
   if(next&&Math.hypot(next[0]-state.x,next[1]-state.z)<5.05){
@@ -856,9 +949,11 @@ function draw(dt,now){
     car.visible=parked||(active&&state.camera!==1);
     if(!car.visible)continue;
     const [cx,cz,cyaw]=active?[x,z,heading]:lastMount.coords;
+    const handling=variant(active?state.vehicle:lastMount?.id)?.dynamics??vehicleDynamics[id]??vehicleDynamics.car;
     vehiclePaint(car,variant(active?state.vehicle:lastMount.id)?.color);
-    car.position.set(cx,.035+Math.sin(now*.018)*a+(active?roadLift:0),cz);car.rotation.set(0,-cyaw,active?-steer*Math.min(id==='bike'?.28:.06,Math.abs(speed)*(id==='bike'?.019:.003)):0,'YZX');
-    for(const w of wheels){w.mount.rotation.y=active&&w.front?-steer*.30:0;if(active&&id!=='bike'&&id!=='rover')w.mount.rotation.x-=speed*dt/.37}
+    car.position.set(cx,.035+Math.sin(now*.018)*a+(active?roadLift+state.suspensionY:0),cz);
+    car.rotation.set(active?state.bodyPitch:0,-cyaw,active?state.bodyRoll+(id==='bike'?-steer*Math.min(.28,Math.abs(speed)*.019):0):0,'YXZ');
+    poseSuspensionWheels(wheels,handling,active,dt,state.steer,speed);
   }
   for(const [id,{model:vehicle,kind,propellers}] of Object.entries(world.extras.fleetModels)){
     if(kind==='rail')continue;
@@ -869,16 +964,18 @@ function draw(dt,now){
     const pose=active?{x,z,heading}:parked?{x:lastMount.coords[0],z:lastMount.coords[1],heading:lastMount.coords[2]}:ride.pose;
     const {x:vx,z:vz,heading:vh}=pose;
     const isWater=kind==='boat',isAir=kind==='air';
+    const isRoad=kind==='road',handling=p.dynamics??vehicleDynamics.car;
     const abilityOn=active&&state.ability>0;
     const steady=abilityOn&&['steady','ferry-stabilize'].includes(p.ability);
     const submerge=isWater&&p.chassis==='sub'?(active?state.depth:0):0;
-    const y=isWater?(steady?-.13:active?state.waterY:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:active?roadLift+.035:.035;
+    const y=isWater?(steady?-.13:active?state.waterY:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:isRoad?active?roadLift+state.suspensionY+.035:.035:.035;
     vehiclePaint(vehicle,p.color);
     vehicle.position.set(vx,y,vz);
     const wavePitch=(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.28;
     const waveRoll=(waveHeight(vx+1.5,vz,simTime)-waveHeight(vx-1.5,vz,simTime))*.34;
-    vehicle.rotation.set(isAir&&active?state.pitch:isWater?(steady?0:wavePitch):0,
-      -vh,isAir&&active?-state.bank:isWater?(steady?0:waveRoll-(active?state.steer*Math.min(.12,Math.abs(state.speed)*.006):0)):active?-steer*Math.min(.10,Math.abs(speed)*.003):0,'YXZ');
+    vehicle.rotation.set(isAir&&active?state.pitch:isWater?(steady?0:wavePitch):isRoad&&active?state.bodyPitch:0,
+      -vh,isAir&&active?-state.bank:isWater?(steady?0:waveRoll-(active?state.steer*Math.min(.12,Math.abs(state.speed)*.006):0)):isRoad&&active?state.bodyRoll+(p.chassis==='bike'?-steer*Math.min(.28,Math.abs(speed)*.019):0):0,'YXZ');
+    if(isRoad)poseSuspensionWheels(vehicle.userData.suspensionWheels,handling,active,dt,state.steer,speed);
     for(const prop of propellers)prop.rotation.z+=dt*(2.5+(active?state.throttle:0)*68);
   }
   world.extras.rider.visible=model==='bike';
@@ -902,6 +999,10 @@ function draw(dt,now){
     pedestrian.model.position.set(x,indoor?.scene?state.jump:footY,z);
     pedestrian.model.rotation.set(state.swimming?-1.07:0,-heading,0,'YXZ');
     animatePerson(pedestrian,t,speed,state.swimming);
+    if(!pedestrian.ragdoll){
+      pedestrian.model.rotation.x=state.swimming?-1.07:Math.max(-.22,Math.min(.22,-state.footAcceleration*.012));
+      pedestrian.model.rotation.z=state.footLean;
+    }
     if(combat.striking())pedestrian.limbs[1].arm.rotation.x=-1.47;
     combat.drawWeapon(pedestrian);
   }
@@ -1179,10 +1280,19 @@ try{
   if(!gl)throw Error('WebGL 2 is unavailable');
   renderer=new T.WebGLRenderer({canvas,context:gl});
   renderer.setClearColor('#625872');renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
   renderer.domElement.tabIndex=0;renderer.domElement.setAttribute('aria-label','Pacifica Bay 3D game canvas');$('world').append(renderer.domElement);
   world=createWorld();world.arch=makeArchipelago(world.scene);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
+  for(const {car} of Object.values(world.cars))enableDirectionalShadow(car);
+  for(const traffic of world.traffic)enableDirectionalShadow(traffic.mesh);
+  enableDirectionalShadow(world.life.player.model,true);
+  for(const npc of world.life.npcs)enableDirectionalShadow(npc.model,true);
+  for(const craft of Object.values(world.life.craft))enableDirectionalShadow(craft);
+  enableDirectionalShadow(world.aircraft.mesh);
   world.waterBackground=new T.Color('#275465');world.ocean.material.side=T.DoubleSide;
   world.extras=makeExtraModels(world);
+  for(const {model} of Object.values(world.extras.fleetModels))enableDirectionalShadow(model);
+  enableDirectionalShadow(world.extras.rider);
   world.scene.add(camera);world.cab=makeCab();world.cab.visible=false;world.passengerCabins=makePassengerCabins(camera);
   initTraffic(0);world.stream.sync(state.x,state.z,flying(),true);resize();new ResizeObserver(()=>{resize();if(manual)draw(0,performance.now())}).observe(viewport);
   start.disabled=mobileStart.disabled=false;$('load-status').hidden=true;syncSelection();refresh();requestAnimationFrame(loop);

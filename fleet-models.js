@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {nearestRail} from './metro-world.js?v=gameplay-overhaul';
-import {fleetProducts} from './fleet.js?v=fleet-variants';
+import {fleetProducts} from './fleet.js?v=road-dynamics';
 
 const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,12,8), tire=new T.CylinderGeometry(.43,.43,.22,14);
 function shape(g,geo,color,x,y,z,w,h,d){
@@ -8,7 +8,10 @@ function shape(g,geo,color,x,y,z,w,h,d){
 }
 const box=(g,...args)=>shape(g,cube,...args);
 function tires(g,w,z){
-  return (w?[w,-w]:[0]).map(x=>shape(g,tire,'#282f39',x,.44,z,1,1,1)).map(m=>{m.rotation.z=Math.PI/2;return {mount:m,front:z<0}})
+  return (w?[w,-w]:[0]).map(x=>{
+    const m=shape(g,tire,'#282f39',x,.44,z,1,1,1);m.rotation.z=Math.PI/2;
+    m.userData.suspensionWheel={left:x<0,front:z<0,baseY:.44};return {mount:m,front:z<0};
+  })
 }
 export function makeExtraModels(w){
   const bike=new T.Group(),rover=new T.Group(),sub=new T.Group(),extras=new Map();
@@ -45,6 +48,8 @@ export function makeExtraModels(w){
     const model=makeFleetModel(p,w);
     addVariantKit(model,p);
     vehiclePaint(model,p.color);
+    model.userData.suspensionWheels=[];
+    model.traverse(o=>{if(o.userData.suspensionWheel)model.userData.suspensionWheels.push(o)});
     const back=p.kind==='rail'?w.arch.train.back.clone(true):null;
     model.visible=false;if(back){vehiclePaint(back,p.color);back.visible=false}
     w.scene.add(model);if(back)w.scene.add(back);
@@ -171,8 +176,9 @@ function makeRoadServiceVehicle(p){
   return g;
 }
 function wheel(g,x,z){
-  const m=shape(g,tire,'#28323b',x,.38,z,.96,.96,.96);m.rotation.z=Math.PI/2;
-  const rim=shape(g,tire,'#9babb0',x,.38,z,.42,.42,.98);rim.rotation.z=Math.PI/2;
+  const mount=new T.Group();mount.position.set(x,0,z);mount.userData.suspensionWheel={left:x<0,front:z<0,baseY:0};g.add(mount);
+  const m=shape(mount,tire,'#28323b',0,.38,0,.96,.96,.96);m.rotation.z=Math.PI/2;
+  const rim=shape(mount,tire,'#9babb0',0,.38,0,.42,.42,.98);rim.rotation.z=Math.PI/2;
 }
 function makeFerryVariant(variant){
   const g=new T.Group(),hullColor=['#397783','#477b84','#597987'][variant];

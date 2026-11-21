@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {person,animatePerson} from './life-world.js?v=streets';
+import {person,animatePerson} from './life-world.js?v=articulated-physics';
 
 const geometry=new T.BoxGeometry(),mats=new Map();
 let terminalSerial=0;

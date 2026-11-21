@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {animatePerson} from './life-world.js?v=streets';
+import {animatePerson} from './life-world.js?v=articulated-physics';
 
 export const weapons={
   hands:{name:'Hands',damage:26,reach:2.35,wait:.48,style:'arc',color:'#ffd1a4'},
@@ -129,12 +129,18 @@ export function createCombat(api){
     }
     return list.sort((a,b)=>a.score-b.score);
   }
-  function damage(p,amount,cause,at=point(p)){
+  function damage(p,amount,cause,at=point(p),impulse=null){
     let r=record(p);
     if(!r){r={hp:100,x:at.x,z:at.z,last:-99,poison:0,rescued:false};records.set(p.id,r)}
     if(r.hp<=0)return 0;
     const was=r.hp;r.hp=Math.max(0,r.hp-amount);r.last=time;r.poison=r.hp>0?r.poison:0;
     r.direction=Math.atan2(at.x-state.x,at.z-state.z);
+    if(cause==='vehicle'||cause==='explosion'){
+      const dx=impulse?.x??at.x-state.x,dz=impulse?.z??at.z-state.z,length=Math.max(.001,Math.hypot(dx,dz));
+      const strength=Math.min(11,cause==='vehicle'?3+amount*.075:2.4+amount*.035);
+      r.ragdoll={start:time,until:time+(cause==='vehicle'?2.1:1.75),vx:dx/length*strength,vz:dz/length*strength};
+      p.ragdoll=r.ragdoll;
+    }
     if(r.hp===0)exposures.delete(p.id);
     const ward=p.ward?45:0;
     if(!r.hp)return (cause==='vehicle'?340:270)+ward;
@@ -191,7 +197,8 @@ export function createCombat(api){
     }else if(gear.style==='bloom'){
       target=aliveActors().map(p=>({p,at:point(p)})).filter(o=>Math.hypot(o.at.x-end.x,o.at.z-end.z)<(gear.radius??3.1)&&visible(end,o.at));
     }else target=list.slice(0,gear.targetCount??(gear.style==='fan'||gear.style==='ring'?4:gear.style==='pierce'?2:1));
-    const hits=target.map((o,i)=>({p:o.p,fine:damage(o.p,gear.style==='chain'&&i?Math.ceil(gear.damage*.55):gear.damage,'weapon',o.at)})).filter(o=>o.fine);
+    const cause=gear.style==='bloom'?'explosion':'weapon';
+    const hits=target.map((o,i)=>({p:o.p,fine:damage(o.p,gear.style==='chain'&&i?Math.ceil(gear.damage*.55):gear.damage,cause,o.at)})).filter(o=>o.fine);
     let crates=0;
     for(const prop of api.props()){
       const dx=prop.x-from.x,dz=prop.z-from.z,d=Math.hypot(dx,dz);
@@ -203,7 +210,7 @@ export function createCombat(api){
       prop.vz+=dz/Math.max(.4,d)*gear.damage*.075;
       prop.vy=Math.max(prop.vy,gear.style==='bloom'?4.5:2.4);crates++;
     }
-    consequence(hits,'weapon');
+    consequence(hits,cause);
     if(!hits.length)api.notice(`${special?.name??gear.name} · ${crates?`${crates} test ${crates===1?'crate':'crates'} moved`:'no one hit'}`);
     return true;
   }
@@ -218,7 +225,7 @@ export function createCombat(api){
       if(time-(r?.vehicleHit??-99)<2.1||Math.abs(at.y)>.85||Math.abs(at.x-bx)>4||Math.abs(at.z-bz)>4)continue;
       const u=clamp(((at.x-ax)*dx+(at.z-az)*dz)/den,0,1);
       if(Math.hypot(at.x-ax-u*dx,at.z-az-u*dz)>width)continue;
-      const fine=damage(p,speed>=14?100:speed>=8?61:28,'vehicle',at);
+      const fine=damage(p,speed>=14?100:speed>=8?61:28,'vehicle',at,{x:dx/Math.sqrt(den)*speed,z:dz/Math.sqrt(den)*speed});
       record(p).vehicleHit=time;hits.push({p,fine});fx('arc',at,at,'#ffd7a7');
     }
     consequence(hits,'vehicle');return hits.length;
@@ -256,6 +263,18 @@ export function createCombat(api){
       if(!aggressive&&r.hp===100&&!r.poison)continue;
       model.userData.inCombat=true;model.visible=true;
       const here=point(p);
+      if(r.ragdoll){
+        if(time<r.ragdoll.until){
+          const fall=r.ragdoll,dx=fall.vx*dt,dz=fall.vz*dt;
+          if(api.canMove(r.x+dx,r.z+dz)){r.x+=dx;r.z+=dz}
+          fall.vx*=Math.exp(-dt*2.8);fall.vz*=Math.exp(-dt*2.8);
+          model.position.x+=r.x-here.x;model.position.z+=r.z-here.z;model.position.y=.34;
+          model.rotation.set(-.48,Math.PI+r.direction,Math.max(-.55,Math.min(.55,(fall.vx-fall.vz)*.055)),'YXZ');
+          animatePerson(p,time,0);continue;
+        }
+        r.ragdoll=null;p.ragdoll=null;model.position.y=.05;
+        model.rotation.set(0,Math.PI+r.direction,0,'YXZ');
+      }
       if(aggressive&&r.hp>0&&!p.resting){
         const dx=state.x-r.x,dz=state.z-r.z,d=Math.hypot(dx,dz),pace=2.85;
         if(d>1.3){

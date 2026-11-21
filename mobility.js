@@ -1,11 +1,11 @@
 import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=gameplay-overhaul';
 import {createSportsMatch,sportModes} from './sports.js?v=gameplay-overhaul';
-import {animatePerson} from './life-world.js?v=connections';
+import {animatePerson} from './life-world.js?v=articulated-physics';
 import {hasVenue,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {seats,cabinLevel,cabinService,cabinTitle} from './cabin.js?v=terminal';
-import {fleetProducts,aircraft} from './fleet.js?v=fleet-variants';
-import {weapons} from './combat.js?v=gameplay-overhaul';
-import {flightEnvelope,coordinatedTurnRate} from './vehicle-physics.js?v=handling';
+import {fleetProducts,aircraft} from './fleet.js?v=road-dynamics';
+import {weapons} from './combat.js?v=ragdoll-physics';
+import {flightEnvelope,coordinatedTurnRate} from './vehicle-physics.js?v=suspension-model';
 
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const fareRates={rail:9,bus:5,taxi:16,ferry:22,airport:38};

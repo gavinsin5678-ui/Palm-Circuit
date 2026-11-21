@@ -1,4 +1,16 @@
 // Handling presets and timed abilities are used by the player-controlled physics.
+const roadDynamics={
+  car:{mass:1,suspension:.16,spring:118,damping:19,grip:8.2,roll:.16},
+  sport:{mass:.88,suspension:.14,spring:142,damping:20,grip:9.1,roll:.20},
+  van:{mass:1.55,suspension:.24,spring:112,damping:22,grip:6.7,roll:.13},
+  bike:{mass:.34,suspension:.23,spring:132,damping:17,grip:7.4,roll:.32},
+  rover:{mass:1.32,suspension:.29,spring:106,damping:23,grip:6.8,roll:.12},
+  bus:{mass:2.1,suspension:.27,spring:104,damping:24,grip:5.8,roll:.09},
+  taxi:{mass:.92,suspension:.17,spring:126,damping:19,grip:8.0,roll:.18},
+  jet:{mass:1.12,suspension:.15,spring:122,damping:19,grip:7.9,roll:.16},
+  gravity:{mass:1.08,suspension:.15,spring:122,damping:19,grip:8.1,roll:.16}
+};
+export const vehicleDynamics=roadDynamics;
 const chassis={
   car:{kind:'road',model:'car',variants:[
     ['volt','Volt Roadster',92,'#7ae5bd','launch','Quick-start torque under 40 km/h',1.06,1.03],
@@ -62,6 +74,6 @@ chassis.ferry={kind:'boat',model:'ferry',variants:[
   ['swiftferry','Swift Ferry',146,'#9ddfc7','ferry-turn','Sharper rudder response at low speed',1.18,1.2],
   ['steadferry','Steadfast Ferry',159,'#e4c38d','ferry-stabilize','Cancels wave roll and damps drift',.92,1.02]]};
 export const fleetProducts=Object.fromEntries(Object.entries(chassis).flatMap(([family,{kind,model,variants}])=>variants.map(
-  ([id,name,price,color,ability,info,power,steer],variant)=>[id,{family,kind,chassis:model,model:id,variant,name,price,color,ability,info:`${info}. Press H to activate.`,power,steer}]
+  ([id,name,price,color,ability,info,power,steer],variant)=>[id,{family,kind,chassis:model,model:id,variant,name,price,color,ability,info:`${info}. Press H to activate.`,power,steer,dynamics:roadDynamics[model]}]
 )));
 export const aircraft=Object.keys(fleetProducts).filter(id=>fleetProducts[id].kind==='air');

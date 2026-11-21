@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {person} from './life-world.js?v=connections';
+import {person} from './life-world.js?v=articulated-physics';
 
 export const islands=[
   {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',z:96,ground:'#c89959',rim:'#e9c084',road:'#675652',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},

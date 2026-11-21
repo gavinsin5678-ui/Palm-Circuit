@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 
-const geom=new T.BoxGeometry(), ball=new T.IcosahedronGeometry(1,1);
+const geom=new T.BoxGeometry(), ball=new T.IcosahedronGeometry(1,1), capsule=new T.CylinderGeometry(.8,1,1,9);
 const cache=new Map();
 const material=(color,glow=false)=>{
   const key=color+glow;if(!cache.has(key))cache.set(key,glow?new T.MeshBasicMaterial({color}):new T.MeshStandardMaterial({color,roughness:.74}));
@@ -40,31 +40,57 @@ export const dockHeight=(x,z)=>{
 export const waveHeight=(x,z,t)=>-.13+Math.sin(z*.40+t*2.8)*.115+Math.sin(x*.63+z*.17-t*1.8)*.075;
 export function person(shirt='#5cbbad',skin='#bc8460',hero=false){
   const model=new T.Group(), limbs=[];
-  block(model,0,1.13,0,.49,.57,.30,shirt);
-  block(model,0,.83,0,.39,.18,.26,'#3c465b');
-  round(model,0,1.62,-.025,.19,.23,.17,skin);
-  round(model,0,1.72,.016,.18,.145,.168,'#46362e');
-  block(model,0,1.768,-.075,.34,.092,.28,hero?'#35535a':'#795850');
+  round(model,0,1.19,0,.245,.34,.17,shirt);
+  round(model,0,.86,0,.205,.17,.145,'#3c465b');
+  round(model,0,1.46,0,.094,.12,.094,skin);
+  round(model,0,1.68,-.015,.145,.18,.135,skin);
+  round(model,0,1.78,.005,.15,.105,.14,'#46362e');
+  round(model,0,1.755,-.09,.16,.075,.10,'#46362e');
   if(hero){
-    block(model,0,1.71,-.207,.30,.048,.17,'#35535a');
-    block(model,0,1.1,.208,.31,.35,.19,'#265651');
-    block(model,0,1.12,.31,.22,.16,.02,'#82dcca');
+    block(model,0,1.17,.155,.018,.39,.012,'#82dcca');
+    block(model,0,1.15,.166,.27,.39,.035,'#265651');
+    block(model,0,1.16,.19,.19,.14,.026,'#82dcca');
   }
   for(const side of [-1,1]){
     const arm=new T.Group();arm.position.set(side*.317,1.345,0);model.add(arm);
-    block(arm,0,-.16,0,.153,.37,.16,shirt);block(arm,0,-.38,0,.13,.17,.14,skin);
+    const upper=new T.Mesh(capsule,material(shirt));upper.position.y=-.16;upper.scale.set(.115,.36,.115);arm.add(upper);
+    const lowerArm=new T.Group();lowerArm.position.y=-.34;arm.add(lowerArm);
+    const forearm=new T.Mesh(capsule,material(shirt));forearm.position.y=-.145;forearm.scale.set(.085,.29,.085);lowerArm.add(forearm);
+    round(lowerArm,0,-.30,0,.082,.095,.075,skin);
     const leg=new T.Group();leg.position.set(side*.122,.78,0);model.add(leg);
-    block(leg,0,-.30,0,.194,.62,.214,'#414c60');block(leg,0,-.65,-.055,.204,.17,.32,'#e1ccad');
-    limbs.push({side,arm,leg});
+    const thigh=new T.Mesh(capsule,material('#414c60'));thigh.position.y=-.18;thigh.scale.set(.14,.37,.13);leg.add(thigh);
+    const lowerLeg=new T.Group();lowerLeg.position.y=-.37;leg.add(lowerLeg);
+    const calf=new T.Mesh(capsule,material('#414c60'));calf.position.y=-.145;calf.scale.set(.105,.30,.105);lowerLeg.add(calf);
+    const foot=new T.Mesh(geom,material('#e1ccad'));foot.position.set(0,-.32,-.065);foot.scale.set(.13,.09,.23);lowerLeg.add(foot);
+    limbs.push({side,arm,lowerArm,leg,lowerLeg});
   }
   return {model,limbs};
 }
+export function ragdollPerson(p,impulse={x:0,z:0},duration=1.5,now=0){
+  p.ragdoll={start:now,until:now+duration,x:impulse.x??0,z:impulse.z??0};
+}
 export function animatePerson(p,t,speed,swimming=false){
+  if(p.ragdoll&&t<p.ragdoll.until){
+    const age=t-p.ragdoll.start,fall=Math.exp(-age*1.6),impulse=p.ragdoll;
+    p.model.rotation.x=-.48*fall;
+    p.model.rotation.z=Math.max(-.55,Math.min(.55,(impulse.x-impulse.z)*.035))*fall;
+    for(const {side,arm,lowerArm,leg,lowerLeg} of p.limbs){
+      arm.rotation.set(-.72*fall,0,side*(.66+.22*fall));
+      lowerArm.rotation.x=-.62*fall;
+      leg.rotation.set((side?1:-1)*.52*fall,0,side*.12);
+      lowerLeg.rotation.x=.72*fall;
+    }
+    return;
+  }
+  if(p.ragdoll)p.ragdoll=null;
   const factor=Math.min(1,Math.abs(speed)/3), stride=Math.sin(t*(swimming?7:8.5))*factor;
-  for(const {side,arm,leg} of p.limbs){
+  p.model.rotation.x=0;p.model.rotation.z=0;
+  for(const {side,arm,lowerArm,leg,lowerLeg} of p.limbs){
     arm.rotation.x=swimming?-.95+Math.sin(t*8+side*1.57)*1.15*factor:side*stride*.56;
     arm.rotation.z=swimming?side*.35:side*.06;
+    lowerArm.rotation.x=Math.max(0,stride*side)*.48;
     leg.rotation.x=-side*stride*(swimming?.42:.78);
+    lowerLeg.rotation.x=Math.max(0,stride*side)*.72;
   }
 }
 function hull(parent,w,l,y,c){

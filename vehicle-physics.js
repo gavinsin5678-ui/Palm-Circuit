@@ -1,5 +1,10 @@
 const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
 
+export function stepSpringDamper(position,velocity,target,stiffness,damping,dt,maxVelocity=2.2){
+  const nextVelocity=clamp(velocity+(target-position)*stiffness*dt-velocity*damping*dt,-maxVelocity,maxVelocity);
+  return {position:position+nextVelocity*dt,velocity:nextVelocity};
+}
+
 export function flightEnvelope(speed,bank,baseStallSpeed){
   const stallSpeed=baseStallSpeed*Math.sqrt(1/Math.max(.35,Math.cos(bank)));
   const ratio=clamp(speed/stallSpeed,0,1);

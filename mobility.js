@@ -89,7 +89,7 @@ export function createMobility(api){
   const log=[],gatePasses=new Map(),flightKeys=new Set();let panelMode=null, selection=null, ride=null, boarding=null, sport=null, waypoint=null, crossing=null, incident=null, roadOfficer=null;
   let alertCool=0, propFx=null, gadgetCool=0, atlasRegion='main', purchaseMsg='', prevSignal=null, uiClock=0;
   let sirenX=0,sirenZ=0, patrolHeading=0, cockpitOn=false, lamp=false, assist=false, chime=0, viewTrim=0;
-  let pursuit=[],capture=0,custody=null,grace=0,flash=0,puzzleStep=0,arena=null,leadActive=false;
+  let pursuit=[],capture=0,custody=null,grace=0,flash=0,puzzleStep=0,arena=null,leadActive=false,hijackCutscene=null;
   const careDone=new Set(),wardRobbed=new Set();
   let wardTaken=false,wardDrill=0;
   const tiers=[200,325,500,725,1000],wanted=()=>tiers.filter(b=>state.bounty>=b).length;
@@ -185,10 +185,11 @@ export function createMobility(api){
           item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}),{disabled:!state.owned.includes(id)});
         }
       }else if(s.type==='airport'){
-        copy(`Gate ${line??'A'} · Select your cabin or purchase manual flight control for $10 above the Economy fare.`);
+        copy(`Gate ${line??'A'} · Fly as a passenger, pilot for $10 extra, or hijack the aircraft and take the controls.`);
         item('Economy · Fly as Passenger',`${money(base)} · standard ticket`,()=>ticket(s,d,base,'Economy',false,line,{gate:line??'A'}));
         item('Business · Fly as Passenger',`${money(base+33)} · Business cabin`,()=>ticket(s,d,base+33,'Business',false,line,{gate:line??'A'}));
         item('Fly Yourself · Economy + $10',`${money(base+10)} · manual flight option`,()=>ticket(s,d,base+10,'Economy',false,line,{pilot:true,gate:line??'A'}));
+        item('Hijack the aircraft',`${money(base)} · pilot takeover · high bounty`,()=>ticket(s,d,base,'Economy',false,line,{hijack:true,gate:line??'A'}),{alt:true});
       }else if(cabinService(s.type)){
         const paid=pass==='paid'?0:base, premium=s.type==='airport'?[0,33,64]:s.type==='rail'?[0,12,25]:[0,9,19];
         copy(pass==='paid'?'Your validated pass includes Economy. Upgrades cost only the class difference.':'Pick a cabin. Business and First Class include VIP service and a personal TV.');
@@ -373,7 +374,7 @@ export function createMobility(api){
       waypoint=d;close(false);api.driveTransitVehicle(pack.vehicleId,s,d);api.focus();api.refresh();return;
     }
     if(s.type==='airport'){
-      boarding={ride:buildRide(s,d,!unpaid,cls,line,pack),pilot:!!pack?.pilot};
+      boarding={ride:buildRide(s,d,!unpaid,cls,line,pack),pilot:!!pack?.pilot||!!pack?.hijack,hijack:!!pack?.hijack};
       close(false);api.enterVenue(s,'jetbridge',false,[0,15],0);return;
     }
     ride=buildRide(s,d,!unpaid,cls,line,pack);ride.pose=ride.type==='rail'?railAt(ride.from,line):ride.course(0);
@@ -389,6 +390,31 @@ export function createMobility(api){
     const start=ride.course(0),end=ride.course(1);
     ride.pilotRouteLength=Math.max(1,Math.hypot(end.x-start.x,end.z-start.z));
     waypoint=null;flightKeys.clear();api.startRide();cockpitOn=true;close(false);api.focus();api.refresh();
+  }
+  function startHijack(){
+    if(!boarding?.hijack){startFlight(true);return}
+    const venue=api.venue(),pilot=venue?.people.find(p=>p.name==='Flight Captain');
+    hijackCutscene={elapsed:0,pilot,player:venue?.player};
+    grace=8;law(160,'Commercial aircraft hijacking');api.clearKeys();api.snap();api.refresh();
+  }
+  function stepHijack(dt){
+    if(!hijackCutscene)return;
+    const c=hijackCutscene;c.elapsed+=dt;
+    if(c.player){
+      c.player.model.position.set(0,.04,-19.1);c.player.model.rotation.y=Math.PI;
+      animatePerson(c.player,uiClock,0);
+      c.player.limbs[1].arm.rotation.x=c.elapsed<.55?-1.35:c.elapsed<.92?-.1:-.42;
+      c.player.limbs[1].arm.rotation.z=-.12;
+    }
+    if(c.pilot){
+      c.pilot.model.position.set(0,.04,-21.5);
+      c.pilot.model.rotation.set(c.elapsed>.8?-1.38:0,0,0,'YXZ');
+      c.pilot.limbs[1].arm.rotation.x=c.elapsed<.65?-.12:-.9;
+    }
+    if(c.elapsed<1.9)return;
+    const flight=boarding?.ride;
+    if(!flight){hijackCutscene=null;return}
+    boarding=null;hijackCutscene=null;api.takeoverAircraft(flight.course(0));api.refresh();
   }
   function closest(list){const [x,z]=api.position();return [...list].sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z))[0]}
   function handle(s){
@@ -416,7 +442,7 @@ export function createMobility(api){
         else if(a.data&&a.data!==boarding.ride.cls)social.notice(`This ticket is for ${boarding.ride.cls}.`);
         else startFlight(false);
         break;
-      case 'flight-deck': if(boarding)startFlight(true);else social.notice('You need a flight ticket to board.');break;
+      case 'flight-deck': if(boarding?.hijack)startHijack();else if(boarding)startFlight(true);else social.notice('You need a flight ticket to board.');break;
       case 'airport':api.enterVenue(s,'airport',false,[0,-13],Math.PI);break;
       case 'jetbridge':api.enterVenue(s,'jetbridge',false,[0,15],0);break;
       case 'check-in':open('check-in',{stop:s});break;
@@ -593,6 +619,7 @@ export function createMobility(api){
         if(phase>=1)propFx=null;
       }
     }
+    if(hijackCutscene){stepHijack(dt);return}
     if(!ride)return;
     if(ride.pilotControl){
       updatePilotFlight(dt);
@@ -748,6 +775,7 @@ export function createMobility(api){
     }
   }
   function key(e){
+    if(hijackCutscene)return true;
     if(e.repeat&&e.code!=='Space')return false;
     if(panelMode){
       if(e.code==='Escape'){e.preventDefault();close();return true}
@@ -784,13 +812,14 @@ export function createMobility(api){
   $('cabin-call').addEventListener('click',()=>{if(ride){const s=seats[ride.cls];if(s)ride.service=`VIP service · Your attendant brings ${s.drink.toLowerCase()}.`;refresh();api.focus()}});
   $('cabin-tv-toggle').addEventListener('click',()=>{if(ride&&seats[ride.cls]?.screen){if(ride.tv)ride.channel=(ride.channel+1)%3;ride.tv=true;refresh();api.focus()}});
   $('cabin-look').addEventListener('click',()=>{viewTrim=viewTrim===0?.39:viewTrim>0?-.39:0;api.snap();api.focus()});
-  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,handle,fine,law,collision,runSignals,gadget,bridgeToggle,resetCockpit,
+  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,handle,fine,law,airPiracyTick:()=>law(8,'Ongoing air piracy'),collision,runSignals,gadget,bridgeToggle,resetCockpit,
     panel:()=>panelMode,close,rideInteract,outOfRide,ride:()=>ride,waypoint:()=>waypoint,venueAction,leaveVenueState,detained:()=>!!custody,round:()=>arena,
+    cutscene:()=>!!hijackCutscene,
     cockpit:()=>cockpitOn,trim:()=>viewTrim,assist:()=>assist,lamp:()=>lamp,mark,patrolTalk:()=>open('law',{pay:true}),
     inspect:()=>({view:panelMode,gate:api.venue()?gatePasses.get(api.venue().stop.id)??null:null,
       boarding:boarding?{from:boarding.ride.s.id,to:boarding.ride.d.id,pilot:boarding.pilot}:null,
       ride:ride?{from:ride.s.id,to:ride.d.id,type:ride.type,line:ride.line,pack:ride.pack?.name,progress:ride.time/ride.duration,arrived:!!ride.arrived,paid:ride.paid,pilotControl:!!ride.pilotControl,cls:ride.cls,y:ride.pose?.y,tv:ride.tv,service:ride.service,speed:ride.pilotSpeed}:null,
       crossing:crossing?{...crossing}:null,waypoint:waypoint?.id??null,bountyLog:log,sport:sport?.status()??null,cockpit:cockpitOn,light:lamp,hold:assist,trim:viewTrim,
-      wanted:wanted(),units:Number(leadActive)+pursuit.filter(p=>p.mesh.visible).length,capture,custody,grace,arena,care:[...careDone],wardTaken,wardDrill})
+      wanted:wanted(),units:Number(leadActive)+pursuit.filter(p=>p.mesh.visible).length,capture,custody,grace,arena,care:[...careDone],wardTaken,wardDrill,hijackCutscene:hijackCutscene?.elapsed??0})
   };
 }

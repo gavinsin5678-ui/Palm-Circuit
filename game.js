@@ -11,6 +11,7 @@ import {fleetProducts} from './fleet.js?v=fleet-variants';
 import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=fleet-variants';
 import {createCombat} from './combat.js?v=streets';
 import {flightEnvelope,coordinatedTurnRate,stepWatercraft} from './vehicle-physics.js?v=handling';
+import {createAirDefense} from './air-defense.js?v=hijack';
 
 const $=id=>document.getElementById(id), viewport=$('viewport');
 const names={roam:'Free Roam',sprint:'Coastal Sprint',delivery:'Express Delivery'};
@@ -30,10 +31,21 @@ const boatParking={boat:[...parking.boat],yacht:[...parking.yacht],hydro:[48,64,
 const prototypeIds=fleet.slice(8),variant=id=>fleetProducts[id],modelOf=id=>variant(id)?.chassis??id;
 const isAir=id=>id==='plane'||variant(id)?.kind==='air',isSea=id=>['boat','yacht','hydro'].includes(id)||variant(id)?.kind==='boat';
 const isRail=id=>id==='train'||variant(id)?.kind==='rail';
+const vehicleMaxHealth=id=>{
+  const p=variant(id),model=p?.chassis??id;
+  if(p?.kind==='rail'||id==='train')return 250;
+  if(p?.kind==='air'||id==='plane')return 150;
+  if(p?.kind==='boat'||['boat','yacht','hydro'].includes(id))return model==='sub'?165:190;
+  if(['bus','van','rover'].includes(model)||p?.family==='bus')return model==='bus'?220:180;
+  if(model==='bike')return 64;
+  if(['sport','jet','gravity'].includes(model))return 84;
+  return 110;
+};
 const ability=(...ids)=>state.ability>0&&ids.includes(variant(state.vehicle)?.ability);
 for(const [id,p] of Object.entries(fleetProducts))vehicleName[id]=p.name;
 const state={mode:'roam',vehicle:'car',phase:'ready',time:0,elapsed:0,checkpoint:0,camera:0,x:3.5,z:75,heading:0,speed:0,vx:0,vz:0,steer:0,hit:0,hits:0,
   altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,waterY:0,waterVertical:0,
+  vehicleHealth:110,hijackedAirliner:false,hijackTime:0,hijackBountyTick:0,
   cash:75,heat:0,bounty:0,owned:[],gadget:null,jump:0,track:0,railY:0,ability:0,abilityCool:0,signal:null,
   job:'available',collected:0,fins:false,dialogue:null,swimming:false,interior:null,message:'',messageTime:0,crash:null};
 const keys=new Set(), touchKeys=new Set();
@@ -63,6 +75,7 @@ const drivable=(x,z)=>x<=15.5||!!islandAt(x,z)||highwayAt(x,z);
 const roadSurface=(x,z)=>x<=15.5&&(onStreet(x,z)||atAirfield(x,z))||isRoad(x,z);
 const solidHit=(x,z,y,r)=>world?.stream.hit(x,z,y,r)||world?.arch.hit(x,z,y,r);
 const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);if(x>219)properties.push(...world.arch.properties);return {properties,people}};
+const streetPropAt=(x,z)=>world?.arch.props.find(p=>Math.hypot(p.x-x,p.z-z)<1.9);
 const clearKeys=()=>{keys.clear();touchKeys.clear()};
 const shift=()=>action('ShiftLeft','ShiftRight');
 const cameraName=()=>mobility.cockpit()?(mobility.ride()?.pilotControl?'Flight Deck':mobility.ride()?'Passenger Cabin':'Control Room'):(flying()?airCameras:rail()?['Rail Chase','Driver Cab','Survey Cam']:walking()?footCameras:boating()?waterCameras:cameras)[state.camera];
@@ -73,7 +86,7 @@ const worldPosition=()=>groundPosition??[state.x,state.z];
 const districtAt=(x,z)=>{const island=islandAt(x,z);return island?[island.tag,island.name]:highwayAt(x,z)&&x>31?['PACIFICA ARCHIPELAGO','Channel Expressway']:districtFor(x,z)};
 const mobility=createMobility({state,social,refresh,syncSelection,clearKeys,position:worldPosition,focus:()=>focusView(false),snap:()=>{snap=true},
   sync:syncSelection, sound:playChime,startRide,ridePosition,endRide,driveTransitVehicle,hit:solidHit,isIndoor:()=>!!indoor,isWalking:walking,isRoadVehicle:motoring,isFlying:flying,isBoating:boating,isRail:rail,
-  venue:()=>indoor?.zone?indoor:null,enterVenue,leaveVenue,goRunway,
+  venue:()=>indoor?.zone?indoor:null,enterVenue,leaveVenue,goRunway,takeoverAircraft,
   wardActions:p=>combat.wardActions(p),expose:p=>combat.expose(p),aid:p=>combat.aid(p)});
 const combat=createCombat({state,walking,actors:combatActors,scene:()=>indoor?.scene??world?.scene,
   blocked:()=>mobility.panel()||mobility.ride()||mobility.detained()||indoor?.zone==='arena',
@@ -143,7 +156,8 @@ function syncSelection(){
   $('drive-controls').hidden=flying()||walking()||rail()||airlinerFlight;
   $('flight-controls').hidden=!flying()&&!airlinerFlight;$('flight-data').hidden=!flying()&&!airlinerFlight;$('rail-controls').hidden=!rail();
   $('arrow-note').hidden=!flying();$('walk-controls').hidden=!walking()||airlinerFlight;
-  start.querySelector('span').textContent=state.phase==='running'?endTitle():state.phase==='crashed'?'Recover trainer':launchTitle();
+  start.querySelector('span').textContent=state.phase==='running'?endTitle():state.phase==='crashed'?
+    state.crash?.vehicle?'Repair vehicle':'Recover aircraft':launchTitle();
   mobileStart.textContent=launchTitle();
 }
 
@@ -164,12 +178,14 @@ function resetCar(loc=null){
   if(boating())boatParking[state.vehicle]=[x,z,h];
   Object.assign(state,{x,z,heading:h,speed:0,vx:0,vz:0,hit:0,steer:0,
     altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
-    crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0,waterY:waveHeight(x,z,simTime),waterVertical:0});
+    crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0,waterY:waveHeight(x,z,simTime),waterVertical:0,
+    vehicleHealth:vehicleMaxHealth(state.vehicle),hijackedAirliner:false,hijackTime:0,hijackBountyTick:0});
   jumpVelocity=0;
   if(rail()){
     const p=nearestRail(x,z);Object.assign(state,{track:p.track,railY:p.y,x:p.x,z:p.z,heading:p.heading});
   }
   if(flying())world?.wreck.clear();
+  world?.airDefense?.clear();
   $('crash').hidden=true;
   snap=true;world?.stream.sync(state.x,state.z,flying(),true);
 }
@@ -239,6 +255,16 @@ function driveTransitVehicle(id,stop,destination){
   state.checkpoint=0;state.time=0;state.hits=0;resetCar([px,pz,yaw]);
   document.body.classList.add('playing');syncSelection();focusView();refresh();
   return true;
+}
+function takeoverAircraft(pose){
+  leaveInterior(false);mobility.resetCockpit();
+  Object.assign(state,{vehicle:'plane',mode:'roam',phase:'running',x:pose.x,z:pose.z,heading:pose.heading,
+    speed:0,vx:0,vz:0,altitude:0,vertical:0,throttle:0,pitch:0,bank:0,airborne:false,
+    vehicleHealth:vehicleMaxHealth('plane'),hijackedAirliner:true,hijackTime:0,hijackBountyTick:0,
+    crash:null,signal:null,swimming:false});
+  clearKeys();document.body.classList.add('playing');$('crash').hidden=true;
+  syncSelection();snap=true;focusView(false);social.notice('Flight deck seized · Take off and evade the response.');
+  refresh();
 }
 function startRide(){
   leaveInterior(true);social.close(false);clearKeys();lastMount=null;mobility.resetCockpit();
@@ -483,7 +509,7 @@ function changeOnFoot(fromWreck=false){
   }
   if(!fromWreck&&(state.airborne||Math.abs(state.speed)>4.2)){social.notice(state.airborne?'Land before leaving the plane.':'Slow down to exit the vehicle.');return}
   if(state.phase==='ready'){selectVehicle('walk');begin();return}
-  const prev=state.vehicle, wreckCenter=fromWreck?world.wreck.center():null;
+  const prev=state.vehicle, wreckCenter=fromWreck&&state.crash?.aircraft?world.wreck.center():null;
   const [x,z,yaw]=[wreckCenter?.x??state.x,wreckCenter?.z??state.z,state.heading],vStep=boating()?2.8:2.15;
   if(!fromWreck)lastMount={id:prev,coords:[x,z,yaw]};else lastMount=null;
   stashVehicle();mobility.resetCockpit();state.vehicle='walk';state.mode='roam';state.phase='running';state.camera=0;
@@ -511,11 +537,33 @@ function flightCrash(message,x,z,altitude,water){
   const energy=Math.hypot(state.speed,state.vertical*1.75);
   if(!water&&message==='Collision with a building')world.stream.damageAt(x,z,200+energy*5,2);
   world.wreck.impact({x,z,altitude,energy,water,heading:state.heading,vx:state.vx,vz:state.vz,vertical:state.vertical,pitch:state.pitch,bank:state.bank});
-  keys.clear();touchKeys.clear();state.phase='crashed';state.crash={message,x,z,water,severity:energy>45?'severe':'moderate'};
+  world.airDefense?.clear();keys.clear();touchKeys.clear();state.phase='crashed';state.crash={message,x,z,water,aircraft:true,severity:energy>45?'severe':'moderate'};
+  state.hijackedAirliner=false;
   mobility.resetCockpit();
   Object.assign(state,{x,z,altitude:Math.max(0,altitude),speed:0,vx:0,vz:0,vertical:0,airborne:false,throttle:0,camera:0,flightNotice:''});
-  document.body.classList.remove('playing');$('crash-details').textContent=`${message}. Recover at the runway or continue near the wreck.`;
-  $('crash-walk').textContent=water?'Continue swimming':'Continue on foot';$('crash').hidden=false;snap=true;syncSelection();refresh();
+  document.body.classList.remove('playing');$('crash-title').textContent=state.crash.message==='Anti-aircraft hit'?'Aircraft struck':'Aircraft wrecked';
+  $('crash').querySelector('.eyebrow').textContent='FLIGHT INCIDENT';
+  $('crash-details').textContent=`${message}. Recover at the runway or continue near the wreck.`;
+  $('crash-walk').textContent=water?'Continue swimming':'Continue on foot';$('crash-recover').textContent='Recover aircraft';$('crash').hidden=false;snap=true;syncSelection();refresh();
+}
+function vehicleCrash(message){
+  mobility.close(false);world.airDefense?.clear();keys.clear();touchKeys.clear();
+  state.vehicleHealth=0;state.speed=state.vx=state.vz=0;state.phase='crashed';
+  state.crash={message,x:state.x,z:state.z,vehicle:true};
+  document.body.classList.remove('playing');
+  $('crash-title').textContent='Vehicle disabled';$('crash').querySelector('.eyebrow').textContent='ROAD INCIDENT';
+  $('crash-details').textContent=`${message}. The vehicle is too damaged to drive. Continue on foot or repair and recover it.`;
+  $('crash-walk').textContent='Continue on foot';$('crash-recover').textContent='Repair & recover';
+  $('crash').hidden=false;snap=true;syncSelection();refresh();
+}
+function damageVehicle(impactSpeed,message){
+  if(impactSpeed<2.6)return false;
+  const maximum=vehicleMaxHealth(state.vehicle),relative=100/maximum;
+  const damage=Math.min(maximum,Math.max(3,Math.pow(Math.max(0,impactSpeed-1),1.65)*.55*relative));
+  state.vehicleHealth=Math.max(0,(state.vehicleHealth??maximum)-damage);
+  if(state.vehicleHealth<=0){vehicleCrash(message);return true}
+  if(state.vehicleHealth<maximum*.28)social.notice('Critical vehicle damage · Handling and power reduced.');
+  return false;
 }
 function updatePlane(dt){
   if(state.noticeTime>0){state.noticeTime-=dt;if(state.noticeTime<=0)state.flightNotice=''}
@@ -652,6 +700,7 @@ function update(dt){
   if(!indoor)world.stream.sync(state.x,state.z,flying());
   world.wreck.step(dt);
   mobility.update(dt,simTime,world.arch);
+  if(mobility.cutscene())return;
   combat.step(dt);
   if(state.messageTime>0)state.messageTime=Math.max(0,state.messageTime-dt);
   if(state.phase==='crashed'){state.altitude=Math.max(0,state.altitude-dt*(7+state.altitude*.58));return}
@@ -663,7 +712,15 @@ function update(dt){
   if(before>0&&!state.ability&&((state.vehicle==='hydro'&&solidLand(state.x,state.z))||(state.vehicle==='gravity'&&!drivable(state.x,state.z)))){
     const [x,z]=swapLocation(state.vehicle,state.x,state.z,state.heading,state.vehicle);state.x=x;state.z=z;state.speed=0;snap=true;
   }
-  if(flying()){updatePlane(dt);return}
+  if(flying()){
+    updatePlane(dt);
+    if(state.hijackedAirliner&&state.phase==='running'){
+      state.hijackTime+=dt;state.hijackBountyTick+=dt;
+      while(state.hijackBountyTick>=5){state.hijackBountyTick-=5;mobility.airPiracyTick()}
+      world.airDefense.step(dt,state.hijackTime,state,()=>flightCrash('Anti-aircraft hit',state.x,state.z,state.altitude,false));
+    }
+    return;
+  }
   if(walking()){updateWalk(dt);return}
   if(boating()){updateBoat(dt);return}
   if(rail()){updateTrain(dt);return}
@@ -679,7 +736,8 @@ function update(dt){
     taxiBoost=ability('taxi-sprint')&&accelerating,busBoost=ability('bus-turbo')&&accelerating&&onRoad&&Math.abs(steer)<.22,
     cornerBoost=accelerating&&(ability('passing-burst')&&Math.abs(steer)>.18||ability('corner-launch')&&Math.abs(steer)<.42&&Math.abs(state.steer)>.32),
     ratio=(mod?.power??(state.vehicle==='sport'||state.vehicle==='gravity'?1.23:state.vehicle==='van'?.72:1))*
-      (state.vehicle==='jet'&&state.ability>0?1.60:1)*(taxiBoost?1.24:1)*(busBoost?1.18:1)*(cornerBoost?1.20:1);
+      (state.vehicle==='jet'&&state.ability>0?1.60:1)*(taxiBoost?1.24:1)*(busBoost?1.18:1)*(cornerBoost?1.20:1)*
+      (.52+.48*(state.vehicleHealth??vehicleMaxHealth(state.vehicle))/vehicleMaxHealth(state.vehicle));
   state.speed=core.longitudinal(state.speed/ratio,+accelerating,+braking,+action('Space'),onRoad||ability('grip')||roughGrip?1:.56,dt*(state.vehicle==='van'?.86:1))*ratio;
   if(ability('launch')&&accelerating&&state.speed<12)state.speed+=dt*8;
   if(ability('anchor')&&braking&&state.speed>0)state.speed=Math.max(0,state.speed-dt*14);
@@ -687,18 +745,25 @@ function update(dt){
   if(ability('rescue-brake')&&(braking||action('Space'))&&state.speed>0)state.speed=Math.max(0,state.speed-dt*12);
   if(state.vehicle==='jet'&&state.ability>0&&!braking&&!drift)state.speed=Math.min(67,state.speed+dt*15);
   const turnBoost=ability('cornering')?1.28:ability('taxi-evasion')?1.25:ability('bank')?1.40:1;
-  state.heading=(state.heading+core.yaw_rate(state.speed,steer,+drift)*dt*(mod?.steer??(state.vehicle==='van'?.70:state.vehicle==='sport'?1.12:1))*turnBoost*
+  const damageHandling=.55+.45*(state.vehicleHealth??vehicleMaxHealth(state.vehicle))/vehicleMaxHealth(state.vehicle);
+  state.heading=(state.heading+core.yaw_rate(state.speed,steer,+drift)*dt*(mod?.steer??(state.vehicle==='van'?.70:state.vehicle==='sport'?1.12:1))*turnBoost*damageHandling*
     (ability('race-drift')&&drift?1.18:ability('taxi-drift')&&drift?1.32:1))%(Math.PI*2);
   state.steer+=(steer-state.steer)*Math.min(1,dt*10);
   const traction=Math.min(1,core.grip(state.speed,+drift,dt)*(ability('grip')?1.55:roughGrip?1.42:ability('cornering')&&steer?1.18:1));
   state.vx+=(Math.sin(state.heading)*state.speed-state.vx)*traction;
   state.vz+=(-Math.cos(state.heading)*state.speed-state.vz)*traction;
-  const oldX=state.x,oldZ=state.z,x=state.x+state.vx*dt,z=state.z+state.vz*dt,impactSpeed=Math.hypot(state.vx,state.vz);
-  if(!invalid(x,z)){state.x=x;state.z=z}
+  const oldX=state.x,oldZ=state.z,x=state.x+state.vx*dt,z=state.z+state.vz*dt,impactSpeed=Math.hypot(state.vx,state.vz),prop=streetPropAt(x,z);
+  if(!invalid(x,z)&&!prop){state.x=x;state.z=z}
   else{
-    if(!invalid(x,state.z))state.x=x;
-    if(!invalid(state.x,z))state.z=z;
-    if(Math.abs(state.speed)>2.5&&state.hit===0){state.hits++;state.hit=.72;const other=trafficAt(x,z);if(other)mobility.collision(other,Math.abs(state.speed),accelerating)}
+    if(!prop&&!invalid(x,state.z))state.x=x;
+    if(!prop&&!invalid(state.x,z))state.z=z;
+    if(Math.abs(state.speed)>2.5&&state.hit===0){
+      state.hits++;state.hit=.72;
+      const other=trafficAt(x,z);
+      if(other)mobility.collision(other,Math.abs(state.speed),accelerating);
+      if(prop){prop.vx+=state.vx*.48;prop.vz+=state.vz*.48;prop.vy=Math.max(prop.vy,2.4)}
+      if(damageVehicle(impactSpeed,other?'Traffic collision':prop?'Street-object collision':'Building collision'))return;
+    }
     state.speed*=ability('buffer')?0:ability('impact-cushion')?-.08:ability('taxi-evasion')?-.14:-.24;state.vx*=.16;state.vz*=.16;
   }
   if(!indoor&&!(state.vehicle==='gravity'&&state.ability>0)){
@@ -754,7 +819,7 @@ function draw(dt,now){
   world.extras.rider.visible=model==='bike';
   const {mesh,prop}=world.aircraft,alt=state.altitude;
   const parkedPlane=walking()&&isAir(lastMount?.id)&&!variant(lastMount?.id),variantPlane=variant(state.vehicle)?.kind==='air';
-  mesh.visible=(flying()&&!variantPlane&&state.phase!=='crashed'&&state.camera!==1&&!inCab)||(!indoor&&parkedPlane&&!ride);
+  mesh.visible=(flying()&&!variantPlane&&!state.hijackedAirliner&&state.phase!=='crashed'&&state.camera!==1&&!inCab)||(!indoor&&parkedPlane&&!ride);
   const aircraftId=parkedPlane?lastMount.id:state.vehicle, floats=modelOf(aircraftId)==='float';
   if(mesh.visible){vehiclePaint(mesh,variant(aircraftId)?.color);mesh.scale.set(aircraftId==='thermal'?1.28:aircraftId==='sprintjet'?.86:1,1,aircraftId==='trimotor'?1.25:1)}
   for(const o of world.extras.floats.values())o.visible=floats;
@@ -821,7 +886,7 @@ function draw(dt,now){
       cameraTarget.set(x-sin*base+cos*.8,y+up,z+cos*base+sin*.8);lookAt.set(x+sin*11,y+1.6,z-cos*11);
     }
   }else if(state.phase==='crashed'){
-    const center=world.wreck.center();
+    const center=state.crash?.aircraft?world.wreck.center():null;
     const cx=center?.x??x,cz=center?.z??z,cy=Math.max(0,center?.y??alt);
     cameraTarget.set(cx-sin*11+cos*5.2,cy+6.8,cz+cos*11+sin*5.2);
     lookAt.set(cx,cy+.43,cz-.9);
@@ -933,13 +998,15 @@ function drawTransitModels(ride,cab,t){
   }
   for(const id of ['bus','taxi','ferry','airport']){
     const m=arch.vehicleModels[id], active=ride?.type===id;
+    const hijacked=id==='airport'&&state.hijackedAirliner;
     const idle=id==='ferry'&&state.x<65&&Math.abs(state.z-70)<125||id==='bus'&&state.x<42&&Math.abs(state.z-62)<68;
-    m.visible=active?(ride?.pack?.vehicleId?false:!cab):idle;
+    m.visible=active?(ride?.pack?.vehicleId?false:!cab):hijacked?state.phase!=='crashed':idle;
     if(!m.visible)continue;
     if(active){
       pose(m,ride.pose);
       if(id==='airport'&&ride.pilotControl)m.rotation.set(ride.pilotPitch,-ride.pose.heading,-ride.pilotBank,'YXZ');
     }
+    else if(hijacked){m.position.set(state.x,state.altitude+.04,state.z);m.rotation.set(state.pitch,-state.heading,-state.bank,'YXZ')}
     else if(id==='ferry')pose(m,{x:39,z:70,y:waveHeight(39,70,t),heading:Math.PI/2});
     else pose(m,{x:8.1,z:61,y:0,heading:0});
   }
@@ -1048,7 +1115,7 @@ try{
   renderer=new T.WebGLRenderer({canvas,context:gl});
   renderer.setClearColor('#625872');renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
   renderer.domElement.tabIndex=0;renderer.domElement.setAttribute('aria-label','Pacifica Bay 3D game canvas');$('world').append(renderer.domElement);
-  world=createWorld();world.arch=makeArchipelago(world.scene);world.traffic.push(...world.arch.traffic);
+  world=createWorld();world.arch=makeArchipelago(world.scene);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
   world.waterBackground=new T.Color('#275465');world.ocean.material.side=T.DoubleSide;
   world.extras=makeExtraModels(world);
   world.scene.add(camera);world.cab=makeCab();world.cab.visible=false;world.passengerCabins=makePassengerCabins(camera);

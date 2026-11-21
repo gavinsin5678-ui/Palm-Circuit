@@ -233,6 +233,7 @@ export function makeTerminal(stop,zone,openGate=false){
     target('Enter the flight deck',0,-20,'flight-deck',null,2.8);
     target('Take your Business Class seat',1.55,-13,'flight-seat','Business',2.8);
     target('Take your Economy Class seat',1.55,5,'flight-seat','Economy',2.8);
+    npc(0,-21.5,'Flight Captain','#b7c8ce',null,0,Math.PI);
     npc(-4.3,1,'Cabin attendant','#a8cbd3','staff',1.2);
     npc(4.3,11,'Passenger','#c5a58e',null,1);
   }else if(zone==='hangar'){

@@ -28,25 +28,46 @@ const dummy = new T.Object3D(), color = new T.Color(), batches = new Map();
 const regular = mat('#ffffff'), buildingGlass = mat('#ffffff',{emissive:'#24868e',emissiveIntensity:.19,metalness:.25,roughness:.25});
 const emissive = raw('#ffffff'), foliage = mat('#ffffff',{side:T.DoubleSide});
 let seed=10;
+let activeOwner=null;
+const destroyedBuildings=new Set(), buildingDamage=new Map(), ownerInstances=new Map(), rubbleById=new Set();
 function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296}
 function pick(xs){return xs[Math.floor(rand()*xs.length)]}
+const buildingId=(x,z)=>`${x.toFixed(2)}/${z.toFixed(2)}`;
 function add(g,m,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0){
   const id=`${g.id}/${m.id}`;
   if(!batches.has(id)) batches.set(id,{g,m,items:[]});
-  batches.get(id).items.push([x,y,z,sx,sy,sz,c,rx,ry,rz]);
+  batches.get(id).items.push([x,y,z,sx,sy,sz,c,rx,ry,rz,activeOwner]);
 }
 function box(x,y,z,w,h,d,c,m=regular,ry=0){add(baseGeo,m,x,y,z,w,h,d,c,0,ry,0)}
 function plane(x,y,z,w,d,c,m=regular){add(roadGeo,m,x,y,z,w,1,d,c)}
 function bake(scene){
   for(const {g,m,items} of batches.values()){
     const set=new T.InstancedMesh(g,m,items.length);
-    items.forEach(([x,y,z,w,h,d,c,rx,ry,rz],i)=>{
+    items.forEach(([x,y,z,w,h,d,c,rx,ry,rz,owner],i)=>{
       dummy.position.set(x,y,z);dummy.scale.set(w,h,d);dummy.rotation.set(rx,ry,rz);dummy.updateMatrix();
+      if(owner&&destroyedBuildings.has(owner))dummy.scale.set(0,0,0),dummy.updateMatrix();
       set.setMatrixAt(i,dummy.matrix);set.setColorAt(i,color.set(c));
+      if(owner){
+        if(!ownerInstances.has(owner))ownerInstances.set(owner,[]);
+        ownerInstances.get(owner).push({mesh:set,index:i});
+      }
     });
     set.computeBoundingSphere();scene.add(set);
   }
   batches.clear();
+}
+function hideBuilding(owner){
+  for(const {mesh,index} of ownerInstances.get(owner)??[]){
+    dummy.position.set(0,-100000,0);dummy.scale.set(0,0,0);dummy.rotation.set(0,0,0);dummy.updateMatrix();
+    mesh.setMatrixAt(index,dummy.matrix);mesh.instanceMatrix.needsUpdate=true;
+  }
+}
+function unregisterInstances(group){
+  const meshes=new Set();group.traverse(o=>{if(o.isInstancedMesh)meshes.add(o)});
+  for(const [owner,refs] of ownerInstances){
+    const remaining=refs.filter(ref=>!meshes.has(ref.mesh));
+    if(remaining.length)ownerInstances.set(owner,remaining);else ownerInstances.delete(owner);
+  }
 }
 function roadMaterial(){
   const cvs=document.createElement('canvas');cvs.width=cvs.height=128;
@@ -93,7 +114,8 @@ function lamps(x,z,right){
   box(x+d*1.17,5.56,z,.64,.16,.3,'#626979');
   box(x+d*1.17,5.464,z,.53,.025,.23,'#ffe4a5',emissive);
 }
-function building(x,z,w,d,h,c,style,lite=false){
+function building(x,z,w,d,h,c,style,lite=false,owner=null){
+  const previousOwner=activeOwner;activeOwner=owner;
   const deco=style===1;
   box(x,h/2,z,w,h,d,c);box(x,h+.12,z,w+.4,.25,d+.4,deco?'#f3cbb8':'#a8b8bf');
   if(deco){
@@ -128,11 +150,12 @@ function building(x,z,w,d,h,c,style,lite=false){
     for(const s of [-1,1]){box(doorX+s*1.27,.22,doorZ+.33,.49,.45,.5,'#977969');add(sphere,regular,doorX+s*1.27,.66,doorZ+.33,.32,.39,.34,'#688574')}
   }
   if(variant%4===3)box(doorX,2.75,doorZ+.22,1.48,.15,.29,'#f5d593',emissive);
+  activeOwner=previousOwner;
   return {doorX,doorZ:doorZ+.74,variant};
 }
-function property(x,z,w,d,h,door,kind,special=null){
+function property(x,z,w,d,h,door,kind,special=null,destructible=false){
   const name=special||(kind==='shop'?['Corner Market','Cypress Pantry','Bay Goods'][door.variant%3]:kind==='business'?['Coastline Offices','Pacifica Works','Seabreeze Studio'][door.variant%3]:['Courtyard Home','Bay Residence','Juniper Apartment'][door.variant%3]);
-  return {x,z,w:w/2+.2,d:d/2+.2,h,...door,kind,name,id:`${x.toFixed(2)}/${z.toFixed(2)}`,special:!!special};
+  return {x,z,w:w/2+.2,d:d/2+.2,h,...door,kind,name,id:buildingId(x,z),special:!!special,destructible};
 }
 function sign(scene,text,x,y,z){
   const cvs=document.createElement('canvas');cvs.width=512;cvs.height=112;const g=cvs.getContext('2d');
@@ -313,8 +336,9 @@ function makeTile(i,j,paving){
     }
     const w=x<10||x>130?7+rand()*4:10+rand()*6, d=z<10||z>130?8+rand()*3:10+rand()*6;
     const h=modern?14+rand()*35:4.2+rand()*(variant===3?10:5.5);
-    const door=building(x,z,w,d,h,pick(modern?['#879aa8','#96aeb4','#aeb4bd','#8397a5']:['#d8b29e','#d8c6af','#aac7c3','#bea7b9','#adc4af']),modern?0:1,true);
-    colliders.push(property(ox+x,oz+z,w,d,h+(modern?3.4:1.7),{...door,doorX:ox+door.doorX,doorZ:oz+door.doorZ},modern?'business':door.variant%5===1?'shop':'home'));
+    const owner=buildingId(ox+x,oz+z),door=building(x,z,w,d,h,pick(modern?['#879aa8','#96aeb4','#aeb4bd','#8397a5']:['#d8b29e','#d8c6af','#aac7c3','#bea7b9','#adc4af']),modern?0:1,true,owner);
+    const collider=property(ox+x,oz+z,w,d,h+(modern?3.4:1.7),{...door,doorX:ox+door.doorX,doorZ:oz+door.doorZ},modern?'business':door.variant%5===1?'shop':'home',null,true);
+    if(!destroyedBuildings.has(owner))colliders.push(collider);
   }
   if(!airport){
     const streetX=coast?33.2:32.7,streetZ=35+(j%3)*1.4,p=person(pick(['#c88669','#658a99','#8d76a7']),pick(['#a96d56','#c59867','#936045']));
@@ -328,6 +352,7 @@ function createStream(scene,paving,baseSolids,ocean){
   const tiles=new Map();
   const key=(i,j)=>`${i}/${j}`;
   const core=(i,j)=>i>=0&&i<=1&&j>=0&&j<=1;
+  const debrisMaterial=[mat('#6a665f'),mat('#8b8274'),mat('#555b5a')];
   let index='',queue=[];
   const addTile=(i,j)=>{
     const id=key(i,j);
@@ -348,7 +373,7 @@ function createStream(scene,paving,baseSolids,ocean){
       }
       queue.sort((a,b)=>a[2]-b[2]);
       for(const [id,t] of tiles)if(!desired.has(id)){
-        scene.remove(t.group);t.group.traverse(o=>{if(o.isInstancedMesh)o.dispose()});tiles.delete(id);
+        unregisterInstances(t.group);scene.remove(t.group);t.group.traverse(o=>{if(o.isInstancedMesh)o.dispose()});tiles.delete(id);
       }
     }
     let made=0;
@@ -372,7 +397,62 @@ function createStream(scene,paving,baseSolids,ocean){
     }
     return {properties,people};
   }
-  return {sync,hit,nearby,count:()=>tiles.size};
+  function candidates(x,z){
+    const ix=gridCell(x),iz=gridCell(z),result=baseSolids.filter(p=>p.destructible);
+    for(let i=ix-1;i<=ix+1;i++)for(let j=iz-1;j<=iz+1;j++){
+      const tile=tiles.get(key(i,j));if(tile)result.push(...tile.colliders.filter(p=>p.destructible));
+    }
+    return result;
+  }
+  function makeRubble(p){
+    if(rubbleById.has(p.id))return;
+    rubbleById.add(p.id);
+    const group=new T.Group();
+    const count=5+Math.floor(rand()*4);
+    for(let i=0;i<count;i++){
+      const width=.65+rand()*1.7,height=.32+rand()*1.25,depth=.6+rand()*1.5;
+      const piece=new T.Mesh(baseGeo,debrisMaterial[i%debrisMaterial.length]);
+      piece.position.set(p.x+(rand()-.5)*p.w*1.35,height/2,p.z+(rand()-.5)*p.d*1.35);
+      piece.scale.set(width,height,depth);piece.rotation.set((rand()-.5)*.4,rand()*Math.PI,(rand()-.5)*.35);
+      group.add(piece);
+    }
+    scene.add(group);
+  }
+  function destroy(p){
+    destroyedBuildings.add(p.id);hideBuilding(p.id);
+    const baseIndex=baseSolids.indexOf(p);if(baseIndex>=0)baseSolids.splice(baseIndex,1);
+    for(const tile of tiles.values()){
+      const index=tile.colliders.indexOf(p);if(index>=0)tile.colliders.splice(index,1);
+    }
+    makeRubble(p);buildingDamage.delete(p.id);
+  }
+  function damageAt(x,z,amount,radius=0){
+    let damaged=0,destroyed=0;
+    for(const p of candidates(x,z)){
+      const dx=Math.max(0,Math.abs(x-p.x)-p.w),dz=Math.max(0,Math.abs(z-p.z)-p.d);
+      const distance=Math.hypot(dx,dz);
+      if(distance>radius)continue;
+      const force=amount*(radius?Math.max(.35,1-distance/(radius+1e-6)):1);
+      const value=(buildingDamage.get(p.id)??0)+force;
+      const limit=125+Math.min(190,p.h*3.2);
+      damaged++;
+      if(value>=limit){destroyed++;destroy(p)}else buildingDamage.set(p.id,value);
+    }
+    return {damaged,destroyed};
+  }
+  function strike(from,to,amount,radius=0){
+    const dx=to.x-from.x,dz=to.z-from.z,length=Math.hypot(dx,dz),steps=Math.max(1,Math.ceil(length/.45));
+    for(let i=1;i<=steps;i++){
+      const t=i/steps,x=from.x+dx*t,z=from.z+dz*t,y=(from.y??1)+( (to.y??from.y??1)-(from.y??1))*t;
+      const p=candidates(x,z).find(b=>y<b.h&&Math.abs(x-b.x)<b.w&&Math.abs(z-b.z)<b.d);
+      if(p){
+        const hit={x,z,y};damageAt(x,z,amount,radius);return hit;
+      }
+    }
+    if(radius)damageAt(to.x,to.z,amount,radius);
+    return null;
+  }
+  return {sync,hit,nearby,strike,damageAt,count:()=>tiles.size,destroyed:()=>destroyedBuildings.size};
 }
 export function createWorld(){
   seed=10;
@@ -411,15 +491,15 @@ export function createWorld(){
       // Reserve the named storefronts and the sidewalk in front of their doors.
       if(boardwalkBuildings.some(([bx,bz])=>Math.abs(x+dx-bx)<w/2+6.8&&
         z+dz+d/2>bz-7.25&&z+dz-d/2<bz+11.2))continue;
-      const door=building(x+dx,z+dz,w,d,h,tint,deco?1:0);
-      solids.push(property(x+dx,z+dz,w,d,h+(deco?1.7:3.4),door,deco?(door.variant%4===1?'shop':'home'):'business'));
+      const owner=buildingId(x+dx,z+dz),door=building(x+dx,z+dz,w,d,h,tint,deco?1:0,false,owner);
+      solids.push(property(x+dx,z+dz,w,d,h+(deco?1.7:3.4),door,deco?(door.variant%4===1?'shop':'home'):'business',null,true));
     }
     palm(x+13,z-12,.69);palm(x-13,z+12,.76);
   }
   for(const [x,z,h,c] of boardwalkBuildings){
-    const door=building(x,z,12,13,h,c,1);
+    const owner=buildingId(x,z),door=building(x,z,12,13,h,c,1,false,owner);
     const name=z===69?'Your Home':z===32?'Miramar Market':z===-16?'Sunset Works':null;
-    solids.push(property(x,z,12,13,h+1.7,door,z===32?'shop':z===-16?'business':'home',name));
+    solids.push(property(x,z,12,13,h+1.7,door,z===32?'shop':z===-16?'business':'home',name,true));
     const pathLength=9.4+door.doorX;
     plane((door.doorX-9.4)/2,.037,door.doorZ+1.32,Math.abs(pathLength),2.5,'#aeaca0');
   }

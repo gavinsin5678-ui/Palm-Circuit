@@ -5,6 +5,7 @@ import {hasVenue,venueFor} from './terminal-world.js?v=streets';
 import {seats,cabinLevel,cabinService,cabinTitle} from './cabin.js?v=terminal';
 import {fleetProducts,aircraft} from './fleet.js?v=fleet-variants';
 import {weapons} from './combat.js?v=streets';
+import {flightEnvelope,coordinatedTurnRate} from './vehicle-physics.js?v=handling';
 
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const fareRates={rail:9,bus:5,taxi:16,ferry:22,airport:38};
@@ -167,10 +168,9 @@ export function createMobility(api){
       const s=selection.stop, line=selection.line;
       heading(stopTypes[s.type],s.name);
       if(purchaseMsg)copy(purchaseMsg,'transit-warning');
-      copy(panelMode==='check-in'?'Consult the departure board. Then walk to Gate A or Gate B to buy a fare and board.':line==='below'?'Cross-Bay Metro · Underground and under-bay service.':line==='surface'?'Coastal Rail · Above-ground local service.':'Choose a destination to buy a fare and board.');
+      copy(panelMode==='check-in'?'Select a destination, then choose Economy, Business, or the +$10 manual flight option.':line==='below'?'Cross-Bay Metro · Underground and under-bay service.':line==='surface'?'Coastal Rail · Above-ground local service.':'Choose a destination to buy a fare and board.');
       for(const d of availableDestinations(s,line)){
-        const desk=panelMode==='check-in';
-        item(d.name,line==='below'?'CROSS-BAY METRO':line==='surface'?'COASTAL RAIL':`From ${money(quote(s,d))}`,desk?null:()=>open('ticket',{stop:s,dest:d,line}),{disabled:desk});
+        item(d.name,line==='below'?'CROSS-BAY METRO':line==='surface'?'COASTAL RAIL':`From ${money(quote(s,d))}`,()=>open('ticket',{stop:s,dest:d,line:panelMode==='check-in'?'A':line}));
       }
     }
     if(panelMode==='ticket'){
@@ -178,16 +178,17 @@ export function createMobility(api){
       heading(`${vehicleLabels[s.type]} · ${s.name}`,d.name);
       if(purchaseMsg)copy(purchaseMsg,'transit-warning');
       if(commuterTypes.includes(s.type)){
-        copy('Choose a variant, then ride as a passenger for the standard fare or drive yourself for $10 more.');
+        copy('Choose a variant, then ride as a passenger for the standard fare or drive an owned vehicle yourself for $10 more.');
         for(const [id,p] of Object.entries(fleetProducts).filter(([,p])=>p.family===s.type)){
           copy(`${p.info} · Handling ${p.power.toFixed(2)} power / ${p.steer.toFixed(2)} steering`,'product-info');
-          item(`Ride as Passenger · ${p.name}`,`${money(base)} · standard fare`,()=>ticket(s,d,base,'Economy',false,line,{name:p.name,vehicleId:id}),{disabled:state.cash<base});
-          item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}),{disabled:state.cash<base+10});
+          item(`Ride as Passenger · ${p.name}`,`${money(base)} · standard fare`,()=>ticket(s,d,base,'Economy',false,line,{name:p.name,vehicleId:id}));
+          item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}),{disabled:!state.owned.includes(id)});
         }
       }else if(s.type==='airport'){
-        copy(`Gate ${line??'A'} · Choose passenger service or buy the flight-deck option for $10 above the standard ticket price.`);
-        item('Fly as Passenger',`${money(base)} · standard Economy ticket`,()=>open('flight-class',selection),{disabled:state.cash<base});
-        item('Fly Yourself',`${money(base+10)} · standard ticket plus $10 pilot fee`,()=>ticket(s,d,base+10,'Economy',false,line,{pilot:true,gate:line??'A'}),{disabled:state.cash<base+10});
+        copy(`Gate ${line??'A'} · Select your cabin or purchase manual flight control for $10 above the Economy fare.`);
+        item('Economy · Fly as Passenger',`${money(base)} · standard ticket`,()=>ticket(s,d,base,'Economy',false,line,{gate:line??'A'}));
+        item('Business · Fly as Passenger',`${money(base+33)} · Business cabin`,()=>ticket(s,d,base+33,'Business',false,line,{gate:line??'A'}));
+        item('Fly Yourself · Economy + $10',`${money(base+10)} · manual flight option`,()=>ticket(s,d,base+10,'Economy',false,line,{pilot:true,gate:line??'A'}));
       }else if(cabinService(s.type)){
         const paid=pass==='paid'?0:base, premium=s.type==='airport'?[0,33,64]:s.type==='rail'?[0,12,25]:[0,9,19];
         copy(pass==='paid'?'Your validated pass includes Economy. Upgrades cost only the class difference.':'Pick a cabin. Business and First Class include VIP service and a personal TV.');
@@ -200,16 +201,6 @@ export function createMobility(api){
       }
       if(pass!=='paid'&&s.type!=='airport')item('Board without paying',pass==='unpaid'?'FARE VIOLATION ALREADY RECORDED':'+$9 bounty',()=>ticket(s,d,0,'Economy',true,line),{alt:true});
       item('Back to departures','',()=>open('station',{stop:s,line}));
-    }
-    if(panelMode==='flight-class'){
-      const {stop:s,dest:d,line}=selection,base=quote(s,d);
-      heading('PACIFICA AIR · PASSENGER CABIN',d.name);
-      copy('Select your passenger cabin. Economy is the standard ticket price; Business and First Class add the listed cabin upgrade.');
-      for(const [i,cls] of Object.keys(seats).entries()){
-        const fare=base+[0,33,64][i];
-        item(`Fly as Passenger · ${cls}`,money(fare),()=>ticket(s,d,fare,cls,false,line,{gate:line??'A'}),{disabled:state.cash<fare});
-      }
-      item('Back to flight options','',()=>open('ticket',selection));
     }
     if(panelMode==='law'){
       heading('PACIFICA POLICE SERVICE','Bounty Ledger');
@@ -374,7 +365,7 @@ export function createMobility(api){
   }
   function ticket(s,d,fare,cls,unpaid=false,line,pack){
     if(api.venue()?.stop.id!==s.id||s.type==='rail'&&(api.venue()?.zone!==line||!gatePasses.has(s.id)))return;
-    if(pack?.driveSelf&&fleetProducts[pack.vehicleId]?.family!==s.type)return;
+    if(pack?.driveSelf&&!state.owned.includes(pack.vehicleId))return;
     if(state.cash<fare){purchaseMsg=`You are ${money(fare-state.cash)} short. Choose another service or earn more cash.`;paint();return}
     if(fare>0)social.changeCash(-fare,`${stopTypes[s.type]} fare`);else if(unpaid&&gatePasses.get(s.id)!=='unpaid')fine('fare');
     if(s.type==='rail')gatePasses.delete(s.id);
@@ -420,7 +411,11 @@ export function createMobility(api){
       case 'hall': api.enterVenue(s,'concourse',true,[0,-12],Math.PI);break;
       case 'departures': if(s.type!=='rail'||gatePasses.has(s.id))open('station',{stop:s,line:a.data});break;
       case 'aircraft-boarding': if(boarding)api.enterVenue(s,'airliner',false,[0,25.2],0);else social.notice('You need a flight ticket to board.');break;
-      case 'flight-seat': if(boarding)startFlight(false);else social.notice('You need a flight ticket to board.');break;
+      case 'flight-seat':
+        if(!boarding)social.notice('You need a flight ticket to board.');
+        else if(a.data&&a.data!==boarding.ride.cls)social.notice(`This ticket is for ${boarding.ride.cls}.`);
+        else startFlight(false);
+        break;
       case 'flight-deck': if(boarding)startFlight(true);else social.notice('You need a flight ticket to board.');break;
       case 'airport':api.enterVenue(s,'airport',false,[0,-13],Math.PI);break;
       case 'jetbridge':api.enterVenue(s,'jetbridge',false,[0,15],0);break;
@@ -616,13 +611,15 @@ export function createMobility(api){
       pitch=Number(flightKeys.has('ArrowUp'))-Number(flightKeys.has('ArrowDown'));
     if(flightKeys.has('KeyW'))ride.pilotThrottle=clamp(ride.pilotThrottle+dt*.42,0,1);
     if(flightKeys.has('KeyS'))ride.pilotThrottle=clamp(ride.pilotThrottle-dt*.62,0,1);
-    ride.pilotSpeed=clamp(ride.pilotSpeed+(ride.pilotThrottle*13-2.6)*dt,0,58);
+    ride.pilotSpeed=clamp(ride.pilotSpeed+(ride.pilotThrottle*8.6-.42-ride.pilotSpeed*ride.pilotSpeed*.0012)*dt,0,58);
     if(flightKeys.has('Space'))ride.pilotSpeed=Math.max(0,ride.pilotSpeed-18*dt);
-    ride.pilotBank+=(steer*.48-ride.pilotBank)*Math.min(1,dt*1.7);
-    ride.pilotPitch+=(pitch*.27-ride.pilotPitch)*Math.min(1,dt*1.15);
-    if(p.y<.3&&ride.pilotSpeed<23)p.y=0;
-    else p.y=clamp(p.y+ride.pilotSpeed*Math.sin(ride.pilotPitch)*dt,0,190);
-    p.heading=(p.heading+Math.sin(ride.pilotBank)*.14*(Math.max(12,ride.pilotSpeed)/30)*dt+Math.PI*2)%(Math.PI*2);
+    const envelope=flightEnvelope(ride.pilotSpeed,ride.pilotBank,24);
+    ride.pilotBank+=(steer*.48*envelope.control-ride.pilotBank)*Math.min(1,dt*1.7);
+    ride.pilotPitch+=((envelope.stalled?-.18:pitch*.27*envelope.control)-ride.pilotPitch)*Math.min(1,dt*(envelope.stalled?1.8:1.15));
+    const lift=(ride.pilotSpeed/envelope.stallSpeed-1)*3.2;
+    const climb=envelope.stalled?-envelope.sink:ride.pilotSpeed*Math.sin(ride.pilotPitch)*.52+lift;
+    p.y=clamp(p.y+climb*dt,0,190);
+    p.heading=(p.heading+coordinatedTurnRate(ride.pilotSpeed,ride.pilotBank,17)*dt+Math.PI*2)%(Math.PI*2);
     p.x+=Math.sin(p.heading)*ride.pilotSpeed*dt;
     p.z-=Math.cos(p.heading)*ride.pilotSpeed*dt;
     ride.pilotDistance+=ride.pilotSpeed*dt;

@@ -10,6 +10,7 @@ import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal
 import {fleetProducts} from './fleet.js?v=fleet-variants';
 import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=fleet-variants';
 import {createCombat} from './combat.js?v=streets';
+import {flightEnvelope,coordinatedTurnRate,stepWatercraft} from './vehicle-physics.js?v=handling';
 
 const $=id=>document.getElementById(id), viewport=$('viewport');
 const names={roam:'Free Roam',sprint:'Coastal Sprint',delivery:'Express Delivery'};
@@ -32,7 +33,7 @@ const isRail=id=>id==='train'||variant(id)?.kind==='rail';
 const ability=(...ids)=>state.ability>0&&ids.includes(variant(state.vehicle)?.ability);
 for(const [id,p] of Object.entries(fleetProducts))vehicleName[id]=p.name;
 const state={mode:'roam',vehicle:'car',phase:'ready',time:0,elapsed:0,checkpoint:0,camera:0,x:3.5,z:75,heading:0,speed:0,vx:0,vz:0,steer:0,hit:0,hits:0,
-  altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,
+  altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,waterY:0,waterVertical:0,
   cash:75,heat:0,bounty:0,owned:[],gadget:null,jump:0,track:0,railY:0,ability:0,abilityCool:0,signal:null,
   job:'available',collected:0,fins:false,dialogue:null,swimming:false,interior:null,message:'',messageTime:0,crash:null};
 const keys=new Set(), touchKeys=new Set();
@@ -77,6 +78,7 @@ const mobility=createMobility({state,social,refresh,syncSelection,clearKeys,posi
 const combat=createCombat({state,walking,actors:combatActors,scene:()=>indoor?.scene??world?.scene,
   blocked:()=>mobility.panel()||mobility.ride()||mobility.detained()||indoor?.zone==='arena',
   notice:social.notice,law:mobility.law,sound:playChime,refresh,canMove:combatCanMove,lineClear:combatLineClear,recoverFromFight,
+  damageWorld:(from,to,amount,radius)=>world?.stream.strike(from,to,amount,radius)??null,
   props:()=>indoor?[]:world?.arch.props??[]});
 function combatActors(){
   if(!world||mobility.ride())return [];
@@ -162,7 +164,7 @@ function resetCar(loc=null){
   if(boating())boatParking[state.vehicle]=[x,z,h];
   Object.assign(state,{x,z,heading:h,speed:0,vx:0,vz:0,hit:0,steer:0,
     altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
-    crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0});
+    crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0,waterY:waveHeight(x,z,simTime),waterVertical:0});
   jumpVelocity=0;
   if(rail()){
     const p=nearestRail(x,z);Object.assign(state,{track:p.track,railY:p.y,x:p.x,z:p.z,heading:p.heading});
@@ -229,7 +231,7 @@ function begin(){
   focusView();refresh();
 }
 function driveTransitVehicle(id,stop,destination){
-  if(!variant(id))return false;
+  if(!variant(id)||!state.owned.includes(id))return false;
   const heading=Math.atan2(destination.x-stop.x,stop.z-destination.z);
   const x=variant(id).kind==='boat'?(stop.region==='main'?43:222):stop.x;
   const [px,pz,yaw]=swapLocation(id,x,stop.z,heading,'walk');
@@ -507,6 +509,7 @@ function recover(){
 }
 function flightCrash(message,x,z,altitude,water){
   const energy=Math.hypot(state.speed,state.vertical*1.75);
+  if(!water&&message==='Collision with a building')world.stream.damageAt(x,z,200+energy*5,2);
   world.wreck.impact({x,z,altitude,energy,water,heading:state.heading,vx:state.vx,vz:state.vz,vertical:state.vertical,pitch:state.pitch,bank:state.bank});
   keys.clear();touchKeys.clear();state.phase='crashed';state.crash={message,x,z,water,severity:energy>45?'severe':'moderate'};
   mobility.resetCockpit();
@@ -522,14 +525,26 @@ function updatePlane(dt){
   state.throttle=minmax(state.throttle+throttle*dt*.73,0,1);
   const steer=mobility.assist()?0:Number(action('KeyD','ArrowRight'))-Number(action('KeyA','ArrowLeft'));
   const pitch=Number((up&&!arrowShift)||touchKeys.has('ArrowUp'))-Number((down&&!arrowShift)||touchKeys.has('ArrowDown'));
-  const nose=air?(pitch<0?-.18:pitch*.31):(state.speed>=(ability('short')?18:26)?Math.max(0,pitch)*.30:0);
-  state.pitch+=(nose-state.pitch)*Math.min(1,dt*3.2);
-  state.bank+=((air?steer*(ability('stabilize')?.27:.67)*(p?.steer??1):0)-state.bank)*Math.min(1,dt*(ability('stabilize')?6:3.3));
   const ratio=(p?.power??1)*(ability('afterburn')&&air?1.27:1);
   state.speed=core.air_speed(state.speed/ratio,state.throttle,Math.sin(state.pitch),+brake,+!air,dt)*ratio;
-  const turn=air?state.bank*.93:steer*Math.min(1,state.speed*.20)*(.76-state.speed*.009);
+  const stallBase=p?.model==='thermal'?18:p?.model==='sprintjet'?31:p?.model==='trimotor'?24:p?.family==='float'?22:27;
+  const takeoffSpeed=ability('short')?18:stallBase;
+  const envelope=flightEnvelope(state.speed,state.bank,stallBase),authority=air?envelope.control:1;
+  const nose=air?(envelope.stalled?-.20:pitch<0?-.18:pitch*.31*authority):
+    (state.speed>=takeoffSpeed?Math.max(0,pitch)*.30:0);
+  state.pitch+=(nose-state.pitch)*Math.min(1,dt*(air&&envelope.stalled?2.4:3.2));
+  state.bank+=((air?steer*(ability('stabilize')?.27:.67)*(p?.steer??1)*authority:0)-state.bank)*Math.min(1,dt*(ability('stabilize')?6:3.3));
+  const loadedEnvelope=flightEnvelope(state.speed,state.bank,stallBase);
+  const turn=air?coordinatedTurnRate(state.speed,state.bank,Math.max(12,stallBase*.7)):
+    steer*Math.min(1,state.speed*.20)*(.76-state.speed*.009);
   state.heading=(state.heading+turn*dt)%(Math.PI*2);
   let desired=core.air_vertical(state.speed+(ability('short')&&!air?8:0),Math.sin(state.pitch));
+  if(air){
+    const liftFloor=(state.speed/stallBase-1)*3.2+state.speed*Math.sin(state.pitch)*.42;
+    desired=loadedEnvelope.stalled?Math.min(desired,-loadedEnvelope.sink):Math.max(desired,liftFloor);
+    const load=1/Math.max(.35,Math.cos(state.bank));
+    state.speed*=Math.exp(-((load-1)*.35+Math.abs(Math.sin(state.pitch))*.08)*dt);
+  }
   if(ability('soar')&&air)desired+=3.9;
   if(ability('glide')&&air&&state.throttle<.45)desired=Math.max(-1.4,desired);
   state.vertical+=((air||desired>0?desired:0)-state.vertical)*Math.min(1,dt*(air?2.3:5.0));
@@ -597,19 +612,27 @@ function updateBoat(dt){
   const p=variant(state.vehicle),racing=modelOf(state.vehicle)!=='yacht',sub=modelOf(state.vehicle)==='sub',forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),
     anchored=ability('current-anchor'),brake=action('Space')||ability('hold')||anchored;
   const steer=mobility.assist()?0:Number(action('KeyD','ArrowRight'))-Number(action('KeyA','ArrowLeft'));
-  const dv=brake?-Math.sign(state.speed)*(anchored?32:ability('hold')?25:17):forward?(racing?8.9:4.55)*(p?.power??1)*(ability('skim')?1.65:1)*(ability('ferryfoil')?1.24:1):reverse?(state.speed>0?-9:-2.3):0;
-  state.speed+=dv*dt;
-  if(brake&&Math.abs(state.speed)<.32)state.speed=0;
-  state.speed*=Math.max(0,1-(racing?.23:.25)*dt-(ability('ferry-stabilize')?.16:0)*dt);
-  state.speed=minmax(state.speed,racing?-4.5:-3.4,(racing?31:14.5)*(p?.power??1)*(ability('skim')?1.18:1)*(ability('ferryfoil')?1.32:1));
-  const rudder=ability('rudder')?1.75:ability('dock-rudder')?1.85*(1-Math.min(.62,Math.abs(state.speed)/30)):ability('ferry-turn')?1.82:1;
-  state.heading=(state.heading+steer*(racing?1.33:.66)*(p?.steer??1)*rudder*Math.min(1,Math.abs(state.speed)/(ability('rudder')?2.2:ability('dock-rudder')?2.8:4.2))*Math.sign(state.speed)*dt)%(Math.PI*2);
+  const fx=Math.sin(state.heading),fz=-Math.cos(state.heading),sx=Math.cos(state.heading),sz=Math.sin(state.heading);
+  const waveAlong=(waveHeight(state.x+fx*2,state.z+fz*2,simTime)-waveHeight(state.x-fx*2,state.z-fz*2,simTime))*.25;
+  const waveAcross=(waveHeight(state.x+sx*2,state.z+sz*2,simTime)-waveHeight(state.x-sx*2,state.z-sz*2,simTime))*.25;
+  const foil=state.vehicle==='hydro'&&state.ability>0;
+  const steady=ability('steady')||ability('ferry-stabilize');
+  const acceleration=(sub?2.2:state.vehicle==='yacht'?3.2:p?.family==='ferry'?3.8:5.4)*(p?.power??1)*
+    (ability('skim')?1.55:ability('ferryfoil')?1.18:1);
+  const maxSpeed=(sub?8:state.vehicle==='yacht'?13:p?.family==='ferry'?16:foil?27:22)*(p?.power??1)*
+    (ability('skim')?1.12:ability('ferryfoil')?1.25:1);
+  const rudder=ability('rudder')||ability('dock-rudder')||ability('ferry-turn')?1.55:1;
+  const motion=stepWatercraft(state,{throttle:forward,reverse,brake,steer,acceleration,
+    reverseAcceleration:sub?1.2:2.1,brakeAcceleration:anchored?17:ability('hold')?13:7.5,
+    maxSpeed,reverseLimit:sub?2.2:racing?4.5:3.4,
+    steerRate:(racing?.84:.58)*(p?.steer??1),rudder,waveAlong:steady?0:waveAlong,waveAcross:steady?0:waveAcross,time:simTime},dt);
+  const {x,z}=motion;
   state.depth=sub?state.depth+((ability('deep')?7:ability('dive')?3.1:0)-state.depth)*Math.min(1,dt*1.7):0;
   state.steer+=(steer-state.steer)*dt*5.8;
-  const x=state.x+Math.sin(state.heading)*state.speed*dt,z=state.z-Math.cos(state.heading)*state.speed*dt;
-  const foil=state.vehicle==='hydro'&&state.ability>0;
-  if(foil?!solidHit(x,z,3.4,.9):x>32.5&&!solidLand(x,z)&&dockHeight(x,z)===null){state.x=x;state.z=z}
-  else{state.speed*=-.31;if(state.hit===0){state.hit=.80;social.notice('Shallow water or dock ahead.')}}
+  if(foil?!solidHit(x,z,3.4,.9):x>32.5&&!solidLand(x,z)&&dockHeight(x,z)===null)Object.assign(state,motion);
+  else{state.speed*=-.31;state.vx*=-.31;state.vz*=-.31;if(state.hit===0){state.hit=.80;social.notice('Shallow water or dock ahead.')}}
+  const targetY=waveHeight(state.x,state.z,simTime),buoyancy=(targetY-state.waterY)*8.5-state.waterVertical*5.3;
+  state.waterVertical+=buoyancy*dt;state.waterY+=state.waterVertical*dt;
 }
 function updateTrain(dt){
   const p=variant(state.vehicle),forward=action('KeyW','ArrowUp'),reverse=action('KeyS','ArrowDown'),
@@ -719,11 +742,13 @@ function draw(dt,now){
     const abilityOn=active&&state.ability>0;
     const steady=abilityOn&&['steady','ferry-stabilize'].includes(p.ability);
     const submerge=isWater&&p.chassis==='sub'?(active?state.depth:0):0;
-    const y=isWater?(steady?-.13:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:active?roadLift+.035:.035;
+    const y=isWater?(steady?-.13:active?state.waterY:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:active?roadLift+.035:.035;
     vehiclePaint(vehicle,p.color);
     vehicle.position.set(vx,y,vz);
-    vehicle.rotation.set(isAir&&active?state.pitch:isWater?(steady?0:(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.21):0,
-      -vh,isAir&&active?-state.bank:isWater?(steady?0:(waveHeight(vx+1.5,vz,simTime)-waveHeight(vx-1.5,vz,simTime))*.25):active?-steer*Math.min(.10,Math.abs(speed)*.003):0,'YXZ');
+    const wavePitch=(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.28;
+    const waveRoll=(waveHeight(vx+1.5,vz,simTime)-waveHeight(vx-1.5,vz,simTime))*.34;
+    vehicle.rotation.set(isAir&&active?state.pitch:isWater?(steady?0:wavePitch):0,
+      -vh,isAir&&active?-state.bank:isWater?(steady?0:waveRoll-(active?state.steer*Math.min(.12,Math.abs(state.speed)*.006):0)):active?-steer*Math.min(.10,Math.abs(speed)*.003):0,'YXZ');
     for(const prop of propellers)prop.rotation.z+=dt*(2.5+(active?state.throttle:0)*68);
   }
   world.extras.rider.visible=model==='bike';
@@ -762,12 +787,12 @@ function draw(dt,now){
     if(id==='sub'&&!active&&!parked){craft.visible=false;continue}
     const [bx,bz,byaw]=active?[x,z,heading]:parked?lastMount.coords:boatParking[id];
     craft.visible=!active||state.camera!==1&&!inCab;
-    const steady=active&&ability('steady'),y=(steady?-.13:waveHeight(bx,bz,t))+(active?(id==='hydro'&&state.ability>0?3.3:0)-state.depth:0);
-    const pitch=steady?0:(waveHeight(bx,bz+2,t)-waveHeight(bx,bz-2,t))*.21;
+    const steady=active&&(ability('steady')||ability('ferry-stabilize')),y=(steady?-.13:active?state.waterY:waveHeight(bx,bz,t))+(active?(id==='hydro'&&state.ability>0?3.3:0)-state.depth:0);
+    const pitch=steady?0:(waveHeight(bx,bz+2,t)-waveHeight(bx,bz-2,t))*.28;
     vehiclePaint(craft,variant(active?state.vehicle:parked?lastMount.id:null)?.color);
     craft.position.set(bx,y,bz);
     craft.rotation.set(pitch+(active?Math.min(.12,Math.abs(speed)*.003):0),-byaw,
-      (steady?0:(waveHeight(bx+1.5,bz,t)-waveHeight(bx-1.5,bz,t))*.25)+(active?steer*.06:0),'YXZ');
+      (steady?0:(waveHeight(bx+1.5,bz,t)-waveHeight(bx-1.5,bz,t))*.34)-(active?state.steer*Math.min(.12,Math.abs(speed)*.006):0),'YXZ');
   }
   drawTransitModels(ride,inCab,t);
   paintWake(life,boating()&&state.depth<1?model:state.swimming?'swim':null,x,z,heading,speed,t);
@@ -777,7 +802,7 @@ function draw(dt,now){
   world.playerShadow.position.x=x;world.playerShadow.position.z=z+.22;world.playerShadow.rotation.y=-heading;
   const mobile=viewport.clientWidth<540;
   if(inCab&&(ride||rail()||flying()||boating())){
-    const rideY=ride?.pose?.y, base=rideY??(rail()?state.railY:boating()?waveHeight(x,z,t)+(state.vehicle==='hydro'&&state.ability>0?3.3:0)-state.depth:alt);
+    const rideY=ride?.pose?.y, base=rideY??(rail()?state.railY:boating()?(ability('steady')||ability('ferry-stabilize')?-.13:state.waterY)+(state.vehicle==='hydro'&&state.ability>0?3.3:0)-state.depth:alt);
     const isAir=flying()||ride?.type==='airport',isTrain=rail()||ride?.type==='rail';
     const front=ride?.type==='airport'?ride.pilotControl?10.4:5.95:ride?.type==='ferry'?3.75:isTrain?3.12:ride?.type==='bus'?3.55:flying()?.81:.74;
     const y=base+(isAir?2.2:isTrain?2.28:model==='yacht'||ride?.type==='ferry'?2.62:ride?.type==='bus'?2.23:1.48);

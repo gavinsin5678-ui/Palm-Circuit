@@ -86,10 +86,15 @@ export function createCombat(api){
   function attack(){
     if(!eligible()||time<next)return;
     const gear=weapons[state.weapon], list=aims(gear), main=list[0];
-    const from={x:state.x,z:state.z,y:state.jump}, d=Math.min(gear.reach,gear.style==='bloom'?6:3.4);
+    const from={x:state.x,z:state.z,y:state.jump}, ranged=['ray','pierce','chain'].includes(gear.style),
+      d=Math.min(gear.reach,gear.style==='bloom'?6:ranged?gear.reach:3.4);
     let end=main?.at??{x:from.x+Math.sin(state.heading)*d,z:from.z-Math.cos(state.heading)*d,y:from.y};
     if(!main&&gear.style==='bloom')while(!visible(from,end)&&Math.hypot(end.x-from.x,end.z-from.z)>.3){
       end={...end,x:from.x+(end.x-from.x)*.78,z:from.z+(end.z-from.z)*.78};
+    }
+    if(state.weapon!=='hands'){
+      const impact=api.damageWorld(from,end,gear.damage,gear.style==='bloom'?3.3:0);
+      if(impact&&!main)end=impact;
     }
     next=time+gear.wait;strike=time+.28;api.sound(gear.style==='arc'?128:232);
     fx(gear.style,from,end,gear.color);

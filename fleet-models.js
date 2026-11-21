@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {nearestRail} from './metro-world.js?v=gameplay-overhaul';
+import {nearestRail} from './metro-world.js?v=walkable-transit-v2';
 import {fleetProducts} from './fleet.js?v=road-dynamics';
 
 const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,12,8), tire=new T.CylinderGeometry(.43,.43,.22,14);
@@ -136,10 +136,44 @@ function makeRoadServiceVehicle(p){
   const body=isBus?'#8dc69e':'#e7c56e',glass='#b8e4d7',length=isBus?[7.2,8.5,7.7][variant]:[4.3,4.7,5.1][variant];
   if(isBus){
     const height=variant===1?2.45:2.08;
-    box(g,body,0,1.20,0,2.7,height,length);
+    box(g,body,0,.42,0,2.62,.24,length-.16);
     box(g,'#344e5b',0,1.20+height*.52,0,2.55,.16,length-.12);
-    for(let z=-length*.34;z<=length*.34;z+=length*.22)for(const x of [-1.37,1.37])box(g,glass,x,1.47,z,.08,.72,1.10);
-    box(g,'#526e7b',0,1.5,-length*.5,2.34,.9,.09);
+    box(g,body,0,1.28,-length*.5+.15,2.52,1.72,.24);
+    box(g,body,0,1.28,length*.5-.15,2.52,1.72,.24);
+    for(const side of [-1,1]){
+      if(side<0)box(g,body,side*1.28,.86,0,.14,.76,length-.35);
+      else for(const [a,b] of [[-length*.5+.2,-length*.18-.6],[-length*.18+.6,length*.5-.2]]){
+        const segment=(a+b)*.5;box(g,body,side*1.28,.86,segment,.14,.76,b-a);
+      }
+      box(g,body,side*1.28,1.78,-length*.5+.28,.14,.80,.36);
+      box(g,body,side*1.28,1.78,length*.5-.28,.14,.80,.36);
+      for(let z=-length*.34;z<=length*.34;z+=length*.22){
+        const doorGap=side===1&&Math.abs(z+length*.18)<.8;
+        if(!doorGap)box(g,glass,side*1.355,1.49,z,.045,.78,1.04);
+      }
+      for(let z=-length*.39;z<=length*.39;z+=length*.22){
+        const doorGap=side===1&&Math.abs(z+length*.18)<.8;
+        if(!doorGap)box(g,body,side*1.36,1.49,z,.08,.91,.11);
+      }
+    }
+    box(g,'#526e7b',0,1.62,-length*.5,2.34,.91,.12);
+    box(g,'#344e5b',-.72,1.03,-length*.25,.55,.13,.75);
+    box(g,'#526e7b',-.72,1.36,-length*.25,.58,.68,.58);
+    box(g,'#344e5b',0,1.39,-length*.25,.08,1.55,.10);
+    for(const z of [-length*.31,-length*.08,length*.15,length*.34]){
+      for(const x of [-.88,.88]){
+        box(g,'#526c7c',x,.75,z,.66,.14,.86);
+        box(g,'#69889a',x,.99,z+.20,.64,.56,.20);
+      }
+    }
+    for(const x of [-1.08,1.08]){
+      box(g,'#b9d4c8',x,1.83,0,.055,.055,length*.77);
+      for(let z=-length*.32;z<length*.4;z+=.84)box(g,'#d7e5d7',x,1.64,z,.045,.38,.045);
+    }
+    for(const z of [-length*.18,length*.28]){
+      box(g,'#a4a89a',1.40,.17,z,.44,.12,1.12);
+      box(g,'#a4a89a',1.55,.34,z,.15,.22,1.12);
+    }
     for(const z of [-length*.31,length*.31])for(const x of [-1.18,1.18])wheel(g,x,z);
     if(variant===1){
       box(g,'#d7c58c',0,2.82,-.12,2.22,.19,1.75);

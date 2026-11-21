@@ -1,7 +1,7 @@
-import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=gameplay-overhaul';
+import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=walkable-transit-v2';
 import {createSportsMatch,sportModes} from './sports.js?v=gameplay-overhaul';
 import {animatePerson} from './life-world.js?v=articulated-physics';
-import {hasVenue,venueFor} from './terminal-world.js?v=gameplay-overhaul';
+import {hasVenue,venueFor} from './terminal-world.js?v=walkable-transit-v2';
 import {seats,cabinLevel,cabinService,cabinTitle} from './cabin.js?v=terminal';
 import {fleetProducts,aircraft} from './fleet.js?v=road-dynamics';
 import {weapons} from './combat.js?v=ragdoll-physics';
@@ -104,7 +104,7 @@ function buildRide(s,d,paid,cls,line,pack){
 export function createMobility(api){
   const {state,social}=api;
   const panel=$('transit-panel'), area=$('transit-content'), live=$('ride-hud'), cockpit=$('bridge-console');
-  const log=[],gatePasses=new Map(),flightKeys=new Set();let panelMode=null, selection=null, ride=null, boarding=null, activeMatch=null, sportsSelection=null, matchRewarded=false, waypoint=null, crossing=null, incident=null, roadOfficer=null;
+  const log=[],gatePasses=new Map(),flightKeys=new Set();let panelMode=null, selection=null, ride=null, boarding=null,railBoarding=null,serviceBoarding=null, activeMatch=null, sportsSelection=null, matchRewarded=false, waypoint=null, crossing=null, incident=null, roadOfficer=null,fareGateSensor=null;
   let alertCool=0, propFx=null, gadgetCool=0, atlasRegion='main', purchaseMsg='', prevSignal=null, uiClock=0,policeAttackCool=0,taserCool=0,heliAttackCool=0;
   let sirenX=0,sirenZ=0, patrolHeading=0, cockpitOn=false, lamp=false, assist=false, chime=0, viewTrim=0;
   let pursuit=[],capture=0,custody=null,grace=0,flash=0,puzzleStep=0,arena=null,leadActive=false,hijackCutscene=null;
@@ -175,14 +175,15 @@ export function createMobility(api){
       const s=selection;
       heading('ENTRY CONTROL',s.name);
       if(purchaseMsg)copy(purchaseMsg,'transit-warning');
-      if(gatePasses.has(s.id)){copy(gatePasses.get(s.id)==='paid'?'Ticket validated. Walk through the gate to your platform.':gatePasses.get(s.id)==='arrival'?'Connection access is open. A new trip requires a ticket.':'The fare violation has already been recorded.');return}
+      if(gatePasses.has(s.id)){copy(['paid','boarding'].includes(gatePasses.get(s.id))?'Ticket validated. Walk through the gate to your platform.':gatePasses.get(s.id)==='arrival'?'Connection access is open. A new trip requires a ticket.':'The fare violation has already been recorded.');return}
       copy('Validate once to unlock both platforms. The $9 entry includes an Economy ticket.');
       const pass=paid=>{
         if(paid&&state.cash<9){purchaseMsg=`You are ${money(9-state.cash)} short.`;paint();return}
         gatePasses.set(s.id,paid?'paid':'unpaid');
         if(paid)social.changeCash(-9,'Rail station entry');else fine('fare');
-        const pos=[state.x,state.z],heading=state.heading;
-        close(false);api.enterVenue(s,'concourse',true,pos,heading);
+        const venue=api.venue();
+        if(venue?.stop.id===s.id&&venue.zone==='concourse')venue.openGate=true;
+        close(false);social.notice('Fare validated · walk through the automatic gate and follow the platform ramp.');
       };
       item('Pay $9 and open the gate','ECONOMY FARE INCLUDED',()=>pass(true));
       item('Skip the fare','+$9 bounty',()=>pass(false),{alt:true});
@@ -434,12 +435,25 @@ export function createMobility(api){
     if(state.cash<fare){purchaseMsg=`You are ${money(fare-state.cash)} short. Choose another service or earn more cash.`;paint();return}
     if(fare>0)social.changeCash(-fare,`${stopTypes[s.type]} fare`);else if(unpaid&&gatePasses.get(s.id)!=='unpaid')fine('fare');
     if(s.type==='rail')gatePasses.delete(s.id);
+    if(s.type==='rail'){
+      const pending=buildRide(s,d,true,cls,line,pack);
+      pending.pose=railAt(pending.from,line);pending.previousVehicle=state.vehicle;
+      railBoarding={ride:pending,line};
+      gatePasses.set(s.id,'boarding');
+      close(false);social.notice('Ticket validated · walk through an open train door to board.');api.refresh();return;
+    }
+    if(['bus','taxi','ferry'].includes(s.type)&&!pack?.driveSelf){
+      const pending=buildRide(s,d,true,cls,line,pack);
+      pending.pose=pending.course(0);pending.previousVehicle=state.vehicle;
+      serviceBoarding={ride:pending,stop:s};
+      close(false);social.notice(`Ticket issued · walk aboard the ${s.type} at its marked entrance.`);api.refresh();return;
+    }
     if(pack?.driveSelf){
       waypoint=d;close(false);api.driveTransitVehicle(pack.vehicleId,s,d);api.focus();api.refresh();return;
     }
     if(s.type==='airport'){
       boarding={ride:buildRide(s,d,!unpaid,cls,line,pack),pilot:!!pack?.pilot||!!pack?.hijack,hijack:!!pack?.hijack};
-      close(false);api.enterVenue(s,'jetbridge',false,[0,15],0);return;
+      close(false);social.notice(`Ticket issued for Gate ${pack?.gate??'A'} · walk through the jet bridge to the aircraft.`);api.refresh();return;
     }
     ride=buildRide(s,d,!unpaid,cls,line,pack);ride.pose=ride.type==='rail'?railAt(ride.from,line):ride.course(0);
     ride.previousVehicle=state.vehicle;
@@ -450,6 +464,7 @@ export function createMobility(api){
     if(!boarding){social.notice('Buy a flight ticket at the terminal before boarding.');return}
     if(pilot&&!boarding.pilot){social.notice('The flight-deck controls require the $10 pilot option.');return}
     ride=boarding.ride;boarding=null;ride.pose=ride.course(0);ride.previousVehicle=state.vehicle;
+    ride.walkableCabin=!pilot;
     ride.pilotControl=pilot;ride.pilotSpeed=0;ride.pilotThrottle=0;ride.pilotPitch=0;ride.pilotBank=0;ride.pilotDistance=0;
     const start=ride.course(0),end=ride.course(1);
     ride.pilotRouteLength=Math.max(1,Math.hypot(end.x-start.x,end.z-start.z));
@@ -518,7 +533,8 @@ export function createMobility(api){
     social.notice('Get out of the vehicle and approach the entrance on foot.');
   }
   function leaveVenueState(s){
-    gatePasses.delete(s.id);if(s.type==='arena')arena=null;if(s.type==='bank')banksRobbedThisVisit.delete(s.id);
+    if(railBoarding?.ride.s.id!==s.id)gatePasses.delete(s.id);
+    if(s.type==='arena')arena=null;if(s.type==='bank')banksRobbedThisVisit.delete(s.id);
     if(activeMatch){activeMatch.dispose();activeMatch=null;sportsSelection=null;matchRewarded=false;$('sports-hud').hidden=true}
   }
   function venueAction(a){
@@ -527,18 +543,19 @@ export function createMobility(api){
     switch(a.action){
       case 'street': api.leaveVenue();break;
       case 'rail-gate':open('rail-gate',s);break;
-      case 'platform': if(gatePasses.has(s.id)&&state.z<-4)api.enterVenue(s,a.data,true);else social.notice('Use the fare gate first.');break;
-      case 'hall': api.enterVenue(s,'concourse',true,[0,-12],Math.PI);break;
       case 'departures': if(s.type!=='rail'||gatePasses.has(s.id))open('station',{stop:s,line:a.data});break;
-      case 'aircraft-boarding': if(boarding)api.enterVenue(s,'airliner',false,[0,25.2],0);else social.notice('You need a flight ticket to board.');break;
       case 'flight-seat':
         if(!boarding)social.notice('You need a flight ticket to board.');
+        else if(a.gate&&a.gate!==boarding.ride.pack?.gate)social.notice(`Your ticket is for Gate ${boarding.ride.pack?.gate??'A'}.`);
         else if(a.data&&a.data!==boarding.ride.cls)social.notice(`This ticket is for ${boarding.ride.cls}.`);
         else startFlight(false);
         break;
-      case 'flight-deck': if(boarding?.hijack)startHijack();else if(boarding)startFlight(true);else social.notice('You need a flight ticket to board.');break;
-      case 'airport':api.enterVenue(s,'airport',false,[0,-13],Math.PI);break;
-      case 'jetbridge':api.enterVenue(s,'jetbridge',false,[0,15],0);break;
+      case 'flight-deck':
+        if(!boarding)social.notice('You need a flight ticket to board.');
+        else if(a.gate&&a.gate!==boarding.ride.pack?.gate)social.notice(`Your ticket is for Gate ${boarding.ride.pack?.gate??'A'}.`);
+        else if(boarding.hijack)startHijack();
+        else startFlight(true);
+        break;
       case 'check-in':open('check-in',{stop:s});break;
       case 'hangar':api.enterVenue(s,'hangar');break;
       case 'terminal':api.enterVenue(s,'airport',false,[11,-13],Math.PI);break;
@@ -562,7 +579,7 @@ export function createMobility(api){
       case 'hologram':social.notice('Face the hologram and press Q to tag it during a round.');break;
       case 'staff':{
         const line=v.zone==='concourse'?'Validate at the middle gate, then take the stairs to the surface platforms or the underground Metro. The Railcar in your fleet is separate.':
-          v.zone==='airport'?'Flights board at Gate A and Gate B. Buy a ticket for passenger service or the $10 pilot option, then walk through the jet bridge to the aircraft.':
+          v.zone==='airport'?'Flights board at Gates A–D. Buy a ticket for passenger service or the $10 pilot option, then walk through the jet bridge and choose a cabin at the fork.':
           v.zone==='hospital'?'Our volunteers bring blankets, return lost items, guide families, and help in the training room. Look for the markers beside the bays.':
           v.zone==='hangar'?'Browse the catalog here or go to the far end to take an owned aircraft onto the runway.':'Walk to the marked boarding point to check prices and destinations.';
         open('staff',{name:a.data,kicker:s.name,line});break;
@@ -572,10 +589,37 @@ export function createMobility(api){
   function atStation(x,z,walk){
     if(ride)return [];
     const list=stops.filter(s=>Math.abs(s.x-x)<17&&Math.abs(s.z-z)<18&&(walk||s.type==='taxi'||s.type==='law'))
+      .filter(s=>!walk||!['rail','airport','bus'].includes(s.type))
       .filter(s=>s.type!=='good'||!crossing)
       .map(s=>({...s,z:s.z+(hasVenue(s)?3.5:0),kind:s.type,type:'transit',r:s.type==='rail'?7.5:s.type==='good'?4.5:5.8,label:s.type==='good'?s.name:`Visit ${s.name}`,station:s}));
     if(roadOfficer&&walk&&Math.hypot(x-roadOfficer.x,z-roadOfficer.z)<13)list.push({...roadOfficer,type:'patrol',label:'Talk to patrol officer',r:9});
     return list;
+  }
+  function venueEntranceAt(x,z){
+    return stops.find(s=>['rail','airport','bus'].includes(s.type)&&Math.hypot(s.x-x,s.z-z)<3.7)??null;
+  }
+  function autoFareGateAt(x,z){
+    const venue=api.venue();
+    if(!venue||venue.zone!=='concourse'||gatePasses.has(venue.stop.id)){fareGateSensor=null;return false}
+    if(Math.hypot(x,z+2.2)>=1.7){fareGateSensor=null;return false}
+    if(fareGateSensor===venue.stop.id)return false;
+    fareGateSensor=venue.stop.id;
+    if(!panelMode){open('rail-gate',venue.stop);return true}
+    return false;
+  }
+  function boardTransitAt(x,z,t){
+    const venue=api.venue();
+    if(ride||!api.isWalking()||!venue)return false;
+    if(railBoarding&&venue.stop.id===railBoarding.ride.s.id&&venue.zone===railBoarding.line&&venue.trainBoardingAt?.(x,z,t)){
+      ride=railBoarding.ride;railBoarding=null;ride.time=0;ride.arrived=false;ride.walkableCabin=true;ride.pose=railAt(ride.from,ride.line);
+      gatePasses.delete(venue.stop.id);
+      api.startRide();cockpitOn=false;api.refresh();return true;
+    }
+    if(serviceBoarding&&venue.stop.id===serviceBoarding.stop.id&&venue.zone===serviceBoarding.ride.type&&venue.serviceBoardingAt?.(x,z)){
+      ride=serviceBoarding.ride;serviceBoarding=null;ride.time=0;ride.arrived=false;ride.walkableCabin=true;ride.pose=ride.course(0);
+      api.startRide();cockpitOn=false;api.refresh();return true;
+    }
+    return false;
   }
   function runSignals(t,dt,world,oldX,oldZ){
     if(state.mode!=='roam'||state.phase!=='running'||ride||api.isIndoor()||!api.isRoadVehicle())return;
@@ -764,7 +808,7 @@ export function createMobility(api){
       return;
     }
     ride.time=Math.min(ride.duration,ride.time+dt);
-    const progress=ride.time/ride.duration;
+    const linearProgress=ride.time/ride.duration,progress=ride.type==='rail'?linearProgress*linearProgress*(3-2*linearProgress):linearProgress;
     if(ride.type==='rail'){
       const a=railAt(ride.from+(ride.to-ride.from)*progress,ride.line);
       if(ride.to<ride.from)a.heading+=Math.PI;
@@ -806,9 +850,8 @@ export function createMobility(api){
     if(!ride)return;
     if(!ride.arrived){social.notice('Stay aboard until the next stop.');return}
     const dest=ride.d,line=ride.line;
-    ride=null;api.endRide(dest);
-    if(dest.type==='rail'){gatePasses.set(dest.id,'arrival');api.enterVenue(dest,line,true,[0,-7],Math.PI)}
-    else if(hasVenue(dest))api.enterVenue(dest,venueFor(dest),false,[0,dest.type==='airport'?-13:-5],Math.PI);
+    const completedRide=ride;ride=null;api.endRide(dest,completedRide);
+    if(dest.type==='rail')gatePasses.set(dest.id,'arrival');
     api.refresh();
   }
   function outOfRide(){
@@ -860,7 +903,7 @@ export function createMobility(api){
   }
   function resetCockpit(){cockpitOn=false;lamp=false;assist=false;viewTrim=0}
   function playerDeath(){
-    close(false);ride=null;boarding=null;hijackCutscene=null;arena=null;custody=null;
+    close(false);ride=null;boarding=null;railBoarding=null;serviceBoarding=null;hijackCutscene=null;arena=null;custody=null;
     if(activeMatch){activeMatch.dispose();activeMatch=null;$('sports-hud').hidden=true}
     sportsSelection=null;matchRewarded=false;
     capture=0;grace=0;leadActive=false;policeAttackCool=taserCool=heliAttackCool=0;
@@ -957,7 +1000,7 @@ export function createMobility(api){
   $('cabin-call').addEventListener('click',()=>{if(ride){const s=seats[ride.cls];if(s)ride.service=`VIP service · Your attendant brings ${s.drink.toLowerCase()}.`;refresh();api.focus()}});
   $('cabin-tv-toggle').addEventListener('click',()=>{if(ride&&seats[ride.cls]?.screen){if(ride.tv)ride.channel=(ride.channel+1)%3;ride.tv=true;refresh();api.focus()}});
   $('cabin-look').addEventListener('click',()=>{viewTrim=viewTrim===0?.39:viewTrim>0?-.39:0;api.snap();api.focus()});
-  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,handle,fine,law,airPiracyTick:()=>law(8,'Ongoing air piracy'),collision,runSignals,gadget,bridgeToggle,resetCockpit,playerDeath,
+  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,venueEntranceAt,autoFareGateAt,boardTransitAt,gateOpen:id=>gatePasses.has(id),handle,fine,law,airPiracyTick:()=>law(8,'Ongoing air piracy'),collision,runSignals,gadget,bridgeToggle,resetCockpit,playerDeath,
     panel:()=>panelMode,close,rideInteract,outOfRide,ride:()=>ride,waypoint:()=>waypoint,venueAction,leaveVenueState,detained:()=>!!custody,round:()=>arena,
     sporting:()=>!!activeMatch,sportAction,endSports,
     cutscene:()=>!!hijackCutscene,

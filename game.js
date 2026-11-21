@@ -151,7 +151,7 @@ function syncSelection(){
   document.body.classList.toggle('crashed',state.phase==='crashed');
   document.body.classList.toggle('on-foot',walking());document.body.classList.toggle('boating',boating());
   for(const b of buttons)b.setAttribute('aria-pressed',String(b.dataset.mode===state.mode));
-  for(const b of vehicles){const id=b.dataset.vehicle;b.setAttribute('aria-pressed',String(id===state.vehicle));b.hidden=prototypeIds.includes(id)&&!state.owned.includes(id)}
+  for(const b of vehicles){const id=b.dataset.vehicle;b.setAttribute('aria-pressed',String(id===state.vehicle));b.hidden=prototypeIds.includes(id)&&!state.owned.includes(id)&&id!==state.vehicle}
   $('controls-label').textContent=airlinerFlight?'AIRLINER FLIGHT CONTROLS':flying()?'FLIGHT CONTROLS':walking()?'ON-FOOT CONTROLS':boating()?'BOAT CONTROLS':rail()?'RAIL CONTROLS':'DRIVER CONTROLS';
   $('drive-controls').hidden=flying()||walking()||rail()||airlinerFlight;
   $('flight-controls').hidden=!flying()&&!airlinerFlight;$('flight-data').hidden=!flying()&&!airlinerFlight;$('rail-controls').hidden=!rail();
@@ -247,7 +247,7 @@ function begin(){
   focusView();refresh();
 }
 function driveTransitVehicle(id,stop,destination){
-  if(!variant(id)||!state.owned.includes(id))return false;
+  if(!variant(id))return false;
   const heading=Math.atan2(destination.x-stop.x,stop.z-destination.z);
   const x=variant(id).kind==='boat'?(stop.region==='main'?43:222):stop.x;
   const [px,pz,yaw]=swapLocation(id,x,stop.z,heading,'walk');

@@ -178,11 +178,11 @@ export function createMobility(api){
       heading(`${vehicleLabels[s.type]} · ${s.name}`,d.name);
       if(purchaseMsg)copy(purchaseMsg,'transit-warning');
       if(commuterTypes.includes(s.type)){
-        copy('Choose a variant, then ride as a passenger for the standard fare or drive an owned vehicle yourself for $10 more.');
+        copy('Choose a variant, ride as a passenger for the standard fare, or rent the vehicle to drive yourself for $10 more.');
         for(const [id,p] of Object.entries(fleetProducts).filter(([,p])=>p.family===s.type)){
           copy(`${p.info} · Handling ${p.power.toFixed(2)} power / ${p.steer.toFixed(2)} steering`,'product-info');
           item(`Ride as Passenger · ${p.name}`,`${money(base)} · standard fare`,()=>ticket(s,d,base,'Economy',false,line,{name:p.name,vehicleId:id}));
-          item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}),{disabled:!state.owned.includes(id)});
+          item(`Drive Yourself · ${p.name}`,`${money(base+10)} · fare plus $10`,()=>ticket(s,d,base+10,'Standard',false,line,{vehicleId:id,driveSelf:true}));
         }
       }else if(s.type==='airport'){
         copy(`Gate ${line??'A'} · Fly as a passenger, pilot for $10 extra, or hijack the aircraft and take the controls.`);
@@ -366,7 +366,6 @@ export function createMobility(api){
   }
   function ticket(s,d,fare,cls,unpaid=false,line,pack){
     if(api.venue()?.stop.id!==s.id||s.type==='rail'&&(api.venue()?.zone!==line||!gatePasses.has(s.id)))return;
-    if(pack?.driveSelf&&!state.owned.includes(pack.vehicleId))return;
     if(state.cash<fare){purchaseMsg=`You are ${money(fare-state.cash)} short. Choose another service or earn more cash.`;paint();return}
     if(fare>0)social.changeCash(-fare,`${stopTypes[s.type]} fare`);else if(unpaid&&gatePasses.get(s.id)!=='unpaid')fine('fare');
     if(s.type==='rail')gatePasses.delete(s.id);

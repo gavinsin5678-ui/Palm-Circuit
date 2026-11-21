@@ -60,16 +60,34 @@ function roadPath(s,d,scenic){
   const [sx,sz]=sa,[dx,dz]=da;
   if(s.region===d.region){
     const stroll=s.region==='main'?[[sx-48,sz],[sx-48,dz]]:[[sx,byRegion(s.region).z+40.5],[365,byRegion(s.region).z+40.5],[365,byRegion(s.region).z+3.5]];
-    return [[s.x,s.z],[sx,s.z],[sx,sz],...(scenic?stroll:[]),[sx,dz],[dx,dz],[dx,d.z],[d.x,d.z]];
+    return [[s.x,s.z],[sx,s.z],[sx,sz],...(scenic?stroll:[]),[sx,dz],[dx,dz],[dx,d.z],[d.x,d.z]].map(([x,z])=>[x,z,.12]);
   }
   const join=[[3.5,99.4],[311,99.4]],bridge=s.region==='main'?join:d.region==='main'?[...join].reverse():[];
-  return [[s.x,s.z],[sx,s.z],[sx,sz],...bridge,[dx,dz],[dx,d.z],[d.x,d.z]];
+  return [[s.x,s.z],[sx,s.z],[sx,sz],...bridge,[dx,dz],[dx,d.z],[d.x,d.z]].map(([x,z])=>[x,z,.12]);
 }
 function ferryPath(s,d,scenic){
-  const x=q=>q.region==='main'?47:216;
-  const z=q=>q.z;
-  const end=q=>q.region==='main'?36:223;
-  return [[end(s),z(s),.18],[x(s),z(s),.18],...(scenic?[[140,(z(s)+z(d))*.5+38,.18]]:s.region===d.region?[]:[[x(d),z(s),.18]]),[x(d),z(d),.18],[end(d),z(d),.18]];
+  const lane=223,sea=.18,under=-4.5;
+  const points=s.region==='main'?[[s.x,s.z,sea],[36,s.z,sea],[47,s.z,sea],[lane,s.z,sea]]:
+    [[s.x,s.z,sea],[lane,s.z,sea]];
+  const waterSegment=(x,from,to)=>{
+    if((from<96&&to>96)||(from>96&&to<96)){
+      const direction=Math.sign(to-from);
+      points.push([x,96-direction*12,sea],[x,96-direction*8,under],
+        [x,96+direction*8,under],[x,96+direction*12,sea]);
+    }
+    points.push([x,to,sea]);
+  };
+  if(scenic){
+    points.push([140,s.z,sea]);
+    const scenicZ=(s.z+d.z)*.5+38;
+    waterSegment(140,s.z,scenicZ);waterSegment(140,scenicZ,d.z);
+    points.push([lane,d.z,sea]);
+  }else{
+    waterSegment(lane,s.z,d.z);
+  }
+  if(d.region==='main')points.push([36,d.z,sea],[d.x,d.z,sea]);
+  else points.push([d.x,d.z,sea]);
+  return points;
 }
 function flightPath(s,d){
   const r=q=>q.region==='main'?-195:369;

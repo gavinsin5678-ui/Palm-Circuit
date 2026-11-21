@@ -31,6 +31,8 @@ export const stops=[
   stop('airport-west','airport','West Bay Regional',-214,72,'main'),
   stop('sport','sports','Boardwalk Sports Club',13.7,113),
   stop('law','law','Pacifica Police Desk',11.5,21),
+  stop('bank-central','bank','Pacifica Trust Bank',-79,-119),
+  stop('bank-marina','bank','Miramar Credit Union',10,49),
   stop('hospital','hospital','Pacifica Medical',11.8,9.7),
   stop('arena','arena','Straylight Arena',11.8,-27),
   stop('garage','garage','Straylight Mod Garage',11,-13),
@@ -43,6 +45,7 @@ for(const i of islands){
   stops.push(stop(`${i.id}-bus`,'bus',`${i.name} Bus Terminal`,301,i.z+8,i.id));
   stops.push(stop(`${i.id}-taxi`,'taxi',`${i.name} Taxi Rank`,325,i.z+8,i.id));
   stops.push(stop(`${i.id}-sports`,'sports',`${i.name} Recreation`,326,i.z-11,i.id));
+  stops.push(stop(`${i.id}-bank`,'bank',`${i.name} Community Bank`,344,i.z+4,i.id));
   stops.push(stop(`${i.id}-law`,'law',`${i.name} Police Desk`,298,i.z-14,i.id));
 }
 stops.push(stop('dune-rail','rail','Saffron Lowline',280,54,'dune',{platform:true}));
@@ -50,7 +53,7 @@ stops.push(stop('jungle-rail','rail','Canopy Rail Terminal',281,-93,'jungle',{pl
 stops.push(stop('snow-rail','rail','Frostpeak Rail Terminal',280,270,'snow',{platform:true}));
 stops.push(stop('future-rail','rail','Neon Meridian Rail Terminal',280,486,'future',{platform:true}));
 export const stopById=id=>stops.find(s=>s.id===id);
-export const stopTypes={rail:'RAIL + METRO',ferry:'FERRY',airport:'AIRPORT',bus:'BUS',taxi:'TAXI',sports:'SPORTS',law:'POLICE',garage:'GARAGE',good:'CROSSING',hospital:'HOSPITAL',arena:'ARENA'};
+export const stopTypes={rail:'RAIL + METRO',ferry:'FERRY',airport:'AIRPORT',bus:'BUS',taxi:'TAXI',sports:'SPORTS',law:'POLICE',bank:'BANK',garage:'GARAGE',good:'CROSSING',hospital:'HOSPITAL',arena:'ARENA'};
 const surfaceLine=[
   [-110,86,0],[-8,86,0],[11.8,99,0],[28,92,0],[60,70,0],[232,53,0],[280,54,0],
   [313,54,0],[313,-93,0],[281,-93,0],[313,-93,0],[313,270,0],[280,270,0],
@@ -237,10 +240,10 @@ function makeRailInfrastructure(g){
     }
   }
 }
-const shade={rail:'#8de9cf',bus:'#acd6a5',taxi:'#ffd69a',ferry:'#87dde8',airport:'#a8baff',sports:'#aaf198',law:'#a2b9f9',garage:'#f195d7',good:'#f5c894',hospital:'#a0ece0',arena:'#d6aef2'};
+const shade={rail:'#8de9cf',bus:'#acd6a5',taxi:'#ffd69a',ferry:'#87dde8',airport:'#a8baff',sports:'#aaf198',law:'#a2b9f9',bank:'#f5d28f',garage:'#f195d7',good:'#f5c894',hospital:'#a0ece0',arena:'#d6aef2'};
 function makeStops(g){
   for(const s of stops){
-    const {x,z,type}=s,c=shade[type],major=['airport','rail','ferry','sports','hospital','arena'].includes(type);
+    const {x,z,type}=s,c=shade[type],major=['airport','rail','ferry','sports','hospital','arena','bank'].includes(type);
     if(type==='good')continue;
     if(type==='bus'&&s.id!=='boardwalk'){
       box(g,x,.018,z,4.5,.13,3.2,'#aaa99a');
@@ -257,7 +260,7 @@ function makeStops(g){
       if(type==='bus'||type==='taxi')box(g,x,.032,z+3.55,3.2,.043,1.1,c);
       continue;
     }
-    const w=type==='rail'?15:9,d=type==='rail'?5:4.5;
+    const w=type==='rail'?15:type==='bank'?12:9,d=type==='rail'?5:type==='bank'?7:4.5;
     box(g,x,.027,z,w,.12,d,'#879596');
     box(g,x,3.04,z,w+.5,.29,d+.55,c);
     for(const a of [-1,1])for(const b of [-1,1])box(g,x+a*(w*.45),1.46,z+b*(d*.42),.24,2.9,.23,'#566c73');
@@ -282,6 +285,10 @@ function makeStops(g){
       box(g,x+6.4,2.8,z,7.4,5.6,14,type==='hospital'?'#b5cbd0':'#71728c');
       box(g,x+6.4,5.8,z,7.7,.38,14.3,c);
       for(const a of [-1,0,1])box(g,x+3.2,3.5,z+a*3.1,.15,1.24,2.2,'#436677');
+    }
+    if(type==='bank'){
+      box(g,x,5.4,z,6.4,.42,3.8,'#d4b77a');
+      for(const side of [-1,1])box(g,x+side*4.6,2.1,z-d*.5,1.15,4.2,1.3,'#d9c49b');
     }
     if(type!=='sports')box(g,x,.053,z+3.55,3.2,.043,1.1,c);
     sign(g,x,type==='rail'?4.02:3.76,z+d*.5,s.name,c);
@@ -355,6 +362,14 @@ export function makeArchipelago(scene){
   const train=modelTrain(),metro=modelTrain(),ferry=modelFerry(),flight=modelFlight(),bus=new T.Group(),taxi=new T.Group(),patrol=new T.Group();
   shell(bus,2.9,2.91,8,'#75b599');shell(taxi,2.24,1.57,4.35,'#e7b468');shell(patrol,2.22,1.61,4.62,'#d3e0e9');
   const red=box(patrol,-.36,1.65,.06,.65,.21,.31,'#ff6869',true),blue=box(patrol,.36,1.65,.06,.65,.21,.31,'#6c98ff',true);
+  const helicopter=new T.Group(),rotor=new T.Group();
+  box(helicopter,0,.62,0,1.6,.72,2.9,'#354653');
+  box(helicopter,0,.82,-.63,1.43,.57,.07,'#7db0c0',true);
+  box(helicopter,0,1.18,1.63,.18,.16,2.8,'#465966');
+  box(helicopter,0,1.52,0,.13,.12,4.2,'#273842');
+  box(rotor,0,0,0,5.1,.07,.16,'#202d35');rotor.rotation.y=.72;
+  const rotorBlade=new T.Group();box(rotorBlade,0,0,0,5.1,.07,.16,'#202d35');rotorBlade.rotation.y=-.72;rotor.add(rotorBlade);
+  rotor.position.y=1.58;helicopter.add(rotor);helicopter.visible=false;scene.add(helicopter);
   box(taxi,0,1.55,.16,.79,.21,.34,'#ffe5a9',true);
   const traffic=[];
   for(let i=0;i<6;i++){
@@ -374,7 +389,7 @@ export function makeArchipelago(scene){
   const pulse=new T.Mesh(new T.RingGeometry(.88,1,42),new T.MeshBasicMaterial({color:'#b4f9f0',side:T.DoubleSide,transparent:true}));
   pulse.rotation.x=-Math.PI/2;scene.add(pulse);pulse.visible=false;
   const vehicleModels={rail:metro.front,bus,taxi,ferry,airport:flight};
-  return {train,metro,vehicleModels,patrol,red,blue,mae,way,arrow,traffic,props,pulse,
+  return {train,metro,vehicleModels,patrol,red,blue,helicopter,helicopterRotor:rotor,mae,way,arrow,traffic,props,pulse,
     hit:(x,z,y=.5,r=.35)=>solids.some(o=>y<o.h&&Math.abs(x-o.x)<o.w+r&&Math.abs(z-o.z)<o.d+r),
     properties:solids,
     signal(t){for(const {s,heads} of lights)for(const {axis,bulbs} of heads){const k=['red','amber','green'].indexOf(signalAt(s,t,axis));for(let n=0;n<3;n++)bulbs[n].visible=n===k;}}

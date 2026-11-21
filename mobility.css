@@ -45,9 +45,13 @@
 .bridge-console output{color:var(--mint);font-size:var(--sm);font-variant-numeric:tabular-nums}
 .bridge-actions .tool[aria-pressed=true],.deck-lit{background:#25483e;border-color:#91dcb5}
 .chiming{border-color:#f2cb87}
-.sport-court{display:block;width:100%;height:auto;max-height:44vh}
-.sport-status{font-size:var(--sm);font-weight:800;color:var(--mint);margin:0 0 4px}
-.sport-action{margin:6px 0 3px;min-height:43px}
+.sports-hud{position:absolute;z-index:5;left:50%;top:50%;transform:translate(-50%,-50%);width:min(390px,calc(100% - 28px));padding:14px;border:1px solid #72958e;border-radius:10px;background:#132531f2;box-shadow:0 12px 36px #07111688}
+.sports-hud h2{font:800 clamp(1.45rem,4vw,2rem)/1.05 var(--display);text-transform:uppercase;margin:4px 0}
+.sports-hud p,.sports-hud small{display:block;color:#cadbd9;font-size:var(--xs);line-height:1.45;margin:5px 0}
+.sports-hud output{display:block;color:var(--mint);font-size:1.15rem;font-weight:800;margin:8px 0}
+.sports-hud>div:last-child{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.sports-hud .tool{min-height:38px}
+.sports-hud button:disabled{opacity:.6}
 body.transit-open .hud-bottom,body.transit-open .hud-top,body.transit-open .world-tools,body.transit-open .touch,
 body.riding .objective,body.riding .hud-bottom,body.riding .touch,body.riding #interact,body.riding .world-tools,
 body.dialog-open .world-tools{visibility:hidden}

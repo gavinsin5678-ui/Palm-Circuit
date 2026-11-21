@@ -2,6 +2,7 @@ import * as T from './vendor/three.module.min.js';
 import {person,animatePerson} from './life-world.js?v=streets';
 
 const geometry=new T.BoxGeometry(),mats=new Map();
+let terminalSerial=0;
 function material(color,luminous=false){
   const key=color+luminous;
   if(!mats.has(key))mats.set(key,luminous?new T.MeshBasicMaterial({color}):new T.MeshLambertMaterial({color}));
@@ -23,13 +24,14 @@ function placard(g,x,y,z,w,label,sub='',accent='#8fe5c9',rot=0){
   const o=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({map:textures.get(key),side:T.DoubleSide}));
   o.userData.venueLabel=true;o.position.set(x,y,z);o.rotation.y=rot;g.add(o);
 }
-const tint={concourse:'#8fd8c2',surface:'#ecc18d',below:'#7ddddd',airport:'#a5c9ec',hangar:'#f3bc7e',hospital:'#aee6dc',jail:'#e7bb72',arena:'#cbaeed',bus:'#a9d6a5',taxi:'#f0cc8c',ferry:'#8fdce1',jetbridge:'#8fc5d5',airliner:'#9fc4e4'};
-export const hasVenue=s=>s&&['rail','airport','hospital','arena','bus','taxi','ferry'].includes(s.type);
+const tint={concourse:'#8fd8c2',surface:'#ecc18d',below:'#7ddddd',airport:'#a5c9ec',hangar:'#f3bc7e',hospital:'#aee6dc',jail:'#e7bb72',arena:'#cbaeed',bank:'#f5d28f',sports:'#aaf198',bus:'#a9d6a5',taxi:'#f0cc8c',ferry:'#8fdce1',jetbridge:'#8fc5d5',airliner:'#9fc4e4'};
+export const hasVenue=s=>s&&['rail','airport','hospital','arena','bus','taxi','ferry','bank','sports'].includes(s.type);
 export function venueFor(stop,zone){
   return zone??(stop.type==='rail'?'concourse':stop.type);
 }
-export function makeTerminal(stop,zone,openGate=false){
+export function makeTerminal(stop,zone,openGate=false,options={}){
   const scene=new T.Scene(),g=new T.Group();scene.add(g);scene.background=new T.Color('#263846');
+  const instance=++terminalSerial;
   scene.add(new T.HemisphereLight('#e5f6ff','#b29b8b',2.2));
   const key=new T.DirectionalLight('#fff0cb',2);key.position.set(4,10,5);scene.add(key);
   const compact=['bus','taxi','ferry'].includes(zone);
@@ -42,7 +44,7 @@ export function makeTerminal(stop,zone,openGate=false){
   const solid=(x,z,r,s)=>points.push({x,z,w:r,d:s});
   const npc=(x,z,name,shirt,act,walk=0,facing=0)=>{
     const p=person(shirt,people.length%2?'#bf805f':'#8d6149');p.model.position.set(x,.04,z);p.model.rotation.y=facing;g.add(p.model);
-    const actor={...p,id:`${stop.id}/${zone}/${people.length}`,name,x,z,walk,facing,phase:people.length*1.73,ward:zone==='hospital'};
+    const actor={...p,id:`${stop.id}/${zone}/${instance}/${people.length}`,name,x,z,walk,facing,phase:people.length*1.73,ward:zone==='hospital'};
     people.push(actor);
     if(act){
       target(`Talk to ${name}`,x,z,act,null,act==='ward-person'?2.05:2.6);
@@ -262,6 +264,37 @@ export function makeTerminal(stop,zone,openGate=false){
     desk(9,8,'#607687');box(9.5,1.49,8,.77,.23,.52,'#c4a579');
     port(9,10,'ADMIN LOCKBOX','ward-theft');
     port(-9,10,'WARD SIMULATOR','ward-sim');
+  }else if(zone==='bank'){
+    sign(0,3.8,-8,12,'PACIFICA COMMUNITY BANK','DEPOSITS  /  CREDIT  /  SERVICE');
+    desk(0,-13,'#6e7466');npc(0,-10.7,'Banker Mira','#d2b37f','banker');
+    box(0,.15,-17,8,.28,1.3,'#c7a86d');box(0,2.1,-19,8,4,.24,'#536570');
+    for(let x=-3.2;x<=3.2;x+=1.6)box(x,2.05,-18.82,.045,2.3,.04,'#c4a878');
+    const guards=Math.min(8,Math.max(0,options.security??0));
+    for(let i=0;i<guards;i++){
+      const x=-5.4+(i%4)*3.6,z=5-Math.floor(i/4)*3;
+      const guard=npc(x,z,`Bank Guard ${i+1}`,'#596a72',null,0,Math.PI);
+      guard.role='Bank security';guard.hostile=true;guard.rival=true;
+    }
+    if(guards)sign(0,3.8,7.3,10,`${guards} SECURITY OFFICERS`,'ROBBERY RESPONSE');
+  }else if(zone==='sports'){
+    sign(0,3.8,-8,12,'PACIFICA SPORTS CENTER','CHOOSE A LOCAL PLAYER  /  1v1');
+    box(0,.035,-2,25,.07,31,'#587a65');
+    for(const x of [-12.2,12.2])box(x,.052,-2,.12,.02,30,'#d8dfce');
+    for(const z of [-17,13])box(0,.052,z,24,.02,.12,'#d8dfce');
+    box(0,.052,-2,.12,.02,30,'#d8dfce');
+    box(0,1.8,-15,3.7,3.6,.24,'#526776');box(0,3.5,-15,1.5,.12,.18,'#d7e5df');
+    box(0,1.8,11,5.4,3.6,.24,'#526776');
+    const players=[
+      ['basketball','Basketball · Nia','1v1 basketball','#d8895e',-7,-3],
+      ['football','Football · Tomas','Penalty shootout','#7daa82',0,-2],
+      ['tennis','Tennis · Jules','Singles tennis','#8097c4',7,-3],
+      ['volleyball','Volleyball · Ren','Beach volleyball','#bb8dc1',-4,6],
+      ['badminton','Badminton · Sol','Badminton rally','#c7aa72',4,6]
+    ];
+    for(const [id,name,role,shirt,x,z] of players){
+      const peer=npc(x,z,name,shirt,'sports-player',0,Math.PI);
+      peer.sport=id;peer.role=role;
+    }
   }else if(zone==='arena'){
     sign(0,3.82,-8,11,'STRAYLIGHT ARENA','HOLOGRAM TAG  /  TEST ONLY');
     port(0,4,'START HOLOGRAM TAG','arena');

@@ -1,10 +1,10 @@
-import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=rail-network';
-import {sportsCard,sportModes} from './sports.js?v=connections';
+import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=gameplay-overhaul';
+import {createSportsMatch,sportModes} from './sports.js?v=gameplay-overhaul';
 import {animatePerson} from './life-world.js?v=connections';
-import {hasVenue,venueFor} from './terminal-world.js?v=streets';
+import {hasVenue,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {seats,cabinLevel,cabinService,cabinTitle} from './cabin.js?v=terminal';
 import {fleetProducts,aircraft} from './fleet.js?v=fleet-variants';
-import {weapons} from './combat.js?v=streets';
+import {weapons} from './combat.js?v=gameplay-overhaul';
 import {flightEnvelope,coordinatedTurnRate} from './vehicle-physics.js?v=handling';
 
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -86,15 +86,15 @@ function buildRide(s,d,paid,cls,line,pack){
 export function createMobility(api){
   const {state,social}=api;
   const panel=$('transit-panel'), area=$('transit-content'), live=$('ride-hud'), cockpit=$('bridge-console');
-  const log=[],gatePasses=new Map(),flightKeys=new Set();let panelMode=null, selection=null, ride=null, boarding=null, sport=null, waypoint=null, crossing=null, incident=null, roadOfficer=null;
-  let alertCool=0, propFx=null, gadgetCool=0, atlasRegion='main', purchaseMsg='', prevSignal=null, uiClock=0;
+  const log=[],gatePasses=new Map(),flightKeys=new Set();let panelMode=null, selection=null, ride=null, boarding=null, activeMatch=null, sportsSelection=null, matchRewarded=false, waypoint=null, crossing=null, incident=null, roadOfficer=null;
+  let alertCool=0, propFx=null, gadgetCool=0, atlasRegion='main', purchaseMsg='', prevSignal=null, uiClock=0,policeAttackCool=0,taserCool=0,heliAttackCool=0;
   let sirenX=0,sirenZ=0, patrolHeading=0, cockpitOn=false, lamp=false, assist=false, chime=0, viewTrim=0;
   let pursuit=[],capture=0,custody=null,grace=0,flash=0,puzzleStep=0,arena=null,leadActive=false,hijackCutscene=null;
-  const careDone=new Set(),wardRobbed=new Set();
+  const careDone=new Set(),wardRobbed=new Set(),banksRobbedThisVisit=new Set();
   let wardTaken=false,wardDrill=0;
-  const tiers=[200,325,500,725,1000],wanted=()=>tiers.filter(b=>state.bounty>=b).length;
+  const tiers=[200,325,500,725,1000,1400,1900],wanted=()=>tiers.filter(b=>state.bounty>=b).length;
   function law(delta,label){
-    const previous=wanted(),old=state.bounty;state.bounty=Math.max(0,state.bounty+delta);state.heat=Math.min(5,Math.ceil(state.bounty/48));
+    const previous=wanted(),old=state.bounty;state.bounty=Math.max(0,state.bounty+delta);state.heat=wanted();
     if(wanted()>previous){flash=1.75;const f=$('wanted-flash');f.querySelector('strong').textContent='★'.repeat(wanted());f.hidden=true;void f.offsetWidth;f.hidden=false;api.sound(275)}
     if(old!==state.bounty){log.unshift({label,amount:state.bounty-old});if(log.length>12)log.pop()}
     social.notice(`${label} · ${delta>=0?'+':'−'}${money(Math.abs(old-state.bounty))} bounty`);
@@ -109,16 +109,21 @@ export function createMobility(api){
     area.append(b);return b;
   }
   function copy(txt,cls='transit-description'){area.append(el('p',txt,cls))}
+  function typedAmount(){
+    const amount=Number(area.querySelector('#bank-amount')?.value);
+    if(!Number.isSafeInteger(amount)||amount<1){purchaseMsg='Enter a whole amount greater than zero.';return null}
+    return amount;
+  }
   function heading(kicker,title){
     $('transit-kicker').textContent=kicker;
     $('transit-title').textContent=title;
   }
   function open(mode,select=null,remember=false){
+    if(activeMatch)return;
     panelMode=mode;selection=select;if(!remember)purchaseMsg='';
-    if(mode!=='sports-game')sport=null;
     panel.hidden=false;api.clearKeys();paint();$('transit-close').focus({preventScroll:true});api.refresh();
   }
-  function close(focus=true){panelMode=null;selection=null;sport=null;panel.hidden=true;if(focus)api.focus();api.refresh()}
+  function close(focus=true){panelMode=null;selection=null;panel.hidden=true;if(focus)api.focus();api.refresh()}
   function mark(s){
     waypoint=s;close();social.notice(`Waypoint set · ${s.name}`);
   }
@@ -338,14 +343,56 @@ export function createMobility(api){
     }
     if(panelMode==='sports'){
       heading('PUBLIC SPORTS CENTER',selection?.name??'Recreation Hall');
-      copy('Free to enter. Win a challenge to earn $45. Use the on-screen button or Space to play.');
-      for(const [id,m] of Object.entries(sportModes))item(m.name,m.icon,()=>{open('sports-game',selection);sport=sportsCard(id,n=>social.changeCash(n,`${m.name} prize`));paint()});
+      copy(`Choose a 3D match with ${selection?.player??'a local player'}.`);
+      for(const [id,m] of Object.entries(sportModes))item(m.name,m.icon,()=>startSportsMatch(id,m));
     }
-    if(panelMode==='sports-game'&&sport){
-      const m=sportModes[sport.status().id];
-      heading('TAKE FIVE · SPORTS CHALLENGE',m.name);
-      copy(m.instruction);area.append(sport.root);
-      item('Back to sports','',()=>open('sports',selection));
+    if(panelMode==='bank'){
+      const bank=selection.stop,loans=state.bankLoans??[],active=loans.filter(loan=>loan.remaining>0);
+      heading(bank.name,'Banker service');
+      copy(`Wallet $${state.cash} · protected savings $${state.bankBalance}. Deposits survive death.`);
+      if(purchaseMsg)copy(purchaseMsg,'transit-warning');
+      const label=el('label','Amount in dollars','bank-amount-label');
+      const input=el('input');input.id='bank-amount';input.type='number';input.min='1';input.step='1';input.inputMode='numeric';input.placeholder='Enter an amount';input.setAttribute('aria-label','Amount in dollars');
+      area.append(label,input);
+      for(const loan of active){
+        const remaining=Math.max(0,Math.ceil(loan.dueAt-uiClock));
+        copy(`Loan balance $${loan.remaining} · ${loan.bountyCharged?'bounty filed':`due in ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`}`,'terminal-chip');
+      }
+      item('Deposit','Move wallet cash into protected savings',()=>{
+        const amount=typedAmount();if(amount===null){paint();return}
+        if(amount>state.cash){purchaseMsg='You do not have that much cash in your wallet.';paint();return}
+        state.bankBalance+=amount;social.changeCash(-amount,'Bank deposit');paint();
+      });
+      item('Withdraw',`Available savings: $${state.bankBalance}`,()=>{
+        const amount=typedAmount();if(amount===null){paint();return}
+        if(amount>state.bankBalance){purchaseMsg='You can only withdraw money already deposited.';paint();return}
+        state.bankBalance-=amount;social.changeCash(amount,'Bank withdrawal');paint();
+      });
+      const debt=active.reduce((sum,loan)=>sum+loan.remaining,0);
+      item('Request a loan','Up to $500 · repay within 10 minutes',()=>{
+        const amount=typedAmount();if(amount===null){paint();return}
+        if(amount>500||debt>0){purchaseMsg=debt>0?'Repay your current loan before borrowing again.':'The maximum loan is $500.';paint();return}
+        state.bankLoans??=[];state.bankLoans.push({remaining:amount,dueAt:uiClock+600,bountyCharged:false});
+        social.changeCash(amount,'Bank loan');paint();
+      },{disabled:debt>0});
+      item('Repay loan','Pays down the oldest outstanding loan',()=>{
+        const amount=typedAmount();if(amount===null){paint();return}
+        if(!debt){purchaseMsg='You have no outstanding loan.';paint();return}
+        if(amount>debt){purchaseMsg=`You can repay up to the remaining balance of $${debt}.`;paint();return}
+        if(amount>state.cash){purchaseMsg='You do not have enough wallet cash to repay that amount.';paint();return}
+        let left=amount;
+        for(const loan of active){const paid=Math.min(left,loan.remaining);loan.remaining-=paid;left-=paid;if(!left)break}
+        social.changeCash(-amount,'Loan repayment');paint();
+      },{disabled:!debt});
+      item('Rob this bank','Take your entered amount · bounty increases by the same amount',()=>{
+        if(banksRobbedThisVisit.has(bank.id)){purchaseMsg='This bank has already been robbed during this visit.';paint();return}
+        const amount=typedAmount();if(amount===null){paint();return}
+        banksRobbedThisVisit.add(bank.id);state.bankRobberies??={};
+        state.bankRobberies[bank.id]=(state.bankRobberies[bank.id]??0)+1;
+        social.changeCash(amount,'Bank robbery');law(amount,`Bank robbery · ${bank.name}`);
+        purchaseMsg=`$${amount} taken. ${Math.min(8,state.bankRobberies[bank.id]*2)} guards will secure this bank when you return.`;paint();
+      },{alt:true,disabled:banksRobbedThisVisit.has(bank.id)});
+      item('Leave the bank','',()=>close());
     }
     if(panelMode==='crossing'){
       heading('COMMUNITY WORK','Help Mae cross');
@@ -416,16 +463,46 @@ export function createMobility(api){
     boarding=null;hijackCutscene=null;api.takeoverAircraft(flight.course(0));api.refresh();
   }
   function closest(list){const [x,z]=api.position();return [...list].sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z))[0]}
+  function startSportsMatch(id,mode){
+    if(wanted()>=7){social.notice('The sports center is closed to you while you have seven wanted stars.');return}
+    const venue=api.venue();
+    if(!venue||venue.zone!=='sports'){social.notice('Return to the sports center to start a match.');return}
+    sportsSelection=selection;
+    activeMatch=createSportsMatch(venue.scene,id,sportsSelection.player);
+    matchRewarded=false;panelMode=null;selection=null;panel.hidden=true;api.clearKeys();
+    $('sports-hud').hidden=false;
+    $('sports-title').textContent=`${mode.name} · vs ${sportsSelection.player}`;
+    $('sports-instructions').textContent=mode.instruction;
+    $('sports-action').textContent=`${mode.action} · X`;
+    $('sports-score').textContent=`YOU 0  ·  ${sportsSelection.player} 0`;
+    $('sports-status').textContent='Move close to the ball and press X.';
+    $('sports-action').disabled=false;
+    api.refresh();api.focus();
+  }
+  function sportAction(){
+    if(!activeMatch)return;
+    if(!activeMatch.action(state.x,state.z,state.heading,state.jump))social.notice('Move closer to the ball and face the play before acting.');
+  }
+  function endSports(returnToMenu=true){
+    if(!activeMatch)return;
+    activeMatch.dispose();activeMatch=null;matchRewarded=false;
+    $('sports-hud').hidden=true;
+    const next=sportsSelection;sportsSelection=null;
+    if(returnToMenu&&next&&api.venue()?.zone==='sports')open('sports',next);
+    else{api.focus();api.refresh()}
+  }
   function handle(s){
     if(custody)return;
-    if(s.type==='sports'){open('sports',s);return}
     if(s.type==='law'){open('law',{pay:true});return}
     if(s.type==='garage'){open('garage');return}
     if(s.type==='good'){if(!crossing)open('crossing');return}
     if(hasVenue(s)&&api.isWalking()){waypoint=null;api.enterVenue(s,venueFor(s),gatePasses.has(s.id));return}
     social.notice('Get out of the vehicle and approach the entrance on foot.');
   }
-  function leaveVenueState(s){gatePasses.delete(s.id);if(s.type==='arena')arena=null}
+  function leaveVenueState(s){
+    gatePasses.delete(s.id);if(s.type==='arena')arena=null;if(s.type==='bank')banksRobbedThisVisit.delete(s.id);
+    if(activeMatch){activeMatch.dispose();activeMatch=null;sportsSelection=null;matchRewarded=false;$('sports-hud').hidden=true}
+  }
   function venueAction(a){
     const v=api.venue(),s=v?.stop;
     if(!s)return;
@@ -453,6 +530,15 @@ export function createMobility(api){
       case 'ward-person':open('ward-person',a.data);break;
       case 'ward-theft':open('ward-theft');break;
       case 'ward-sim':open('ward-sim');break;
+      case 'sports-player':
+        if(wanted()>=7)social.notice('The local players are too frightened to play while you have seven wanted stars.');
+        else open('sports',{stop:s,player:a.data});
+        break;
+      case 'banker':{
+        const guards=v.people.filter(p=>p.hostile&&api.actorVital(p)>0);
+        if(guards.length){social.notice(`${guards.length} bank security ${guards.length===1?'officer is':'officers are'} blocking the teller. Defeat them first.`);break}
+        open('bank',{stop:s,banker:a.data});break;
+      }
       case 'arena':open('arena');break;
       case 'custody':if(custody)open('custody');break;
       case 'hologram':social.notice('Face the hologram and press Q to tag it during a round.');break;
@@ -513,7 +599,7 @@ export function createMobility(api){
     const star=wanted(),[px,pz]=api.position(),
       active=state.bounty>=60&&state.phase==='running'&&state.mode==='roam'&&!custody&&grace<=0;
     leadActive=active;
-    if(!active){w.patrol.visible=false;for(const u of pursuit)u.mesh.visible=false;roadOfficer=null;capture=Math.max(0,capture-dt*.7);return}
+    if(!active){w.patrol.visible=false;w.helicopter.visible=false;for(const u of pursuit)u.mesh.visible=false;roadOfficer=null;capture=Math.max(0,capture-dt*.7);return}
     if(!w.patrol.visible||Math.hypot(px-sirenX,pz-sirenZ)>95){
       if(px<=30.45){sirenX=Math.round(px/48)*48-3.3;sirenZ=pz+24}
       else if(highwayAt(px,pz)&&px<304.9){sirenX=clamp(px+(px<46?21:-21),9,300);sirenZ=98.8}
@@ -526,7 +612,7 @@ export function createMobility(api){
       w.patrol.visible=true;
     }
     const dx=px-sirenX,dz=pz-sirenZ,d=Math.hypot(dx,dz);
-    const pace=clamp(Math.abs(state.speed)*.91+4+star*1.8,5,14+star*4);
+    const pace=clamp(Math.abs(state.speed)*.91+4+star*2.7,5,star>=7?34:14+star*2);
     if(d>(star?2.5:6)){
       patrolHeading=Math.atan2(dx,-dz);
       const x=sirenX+dx/d*pace*dt,z=sirenZ+dz/d*pace*dt;
@@ -538,6 +624,11 @@ export function createMobility(api){
     }
     w.patrol.position.set(sirenX,api.isFlying()?state.altitude*.8:.05,sirenZ);w.patrol.rotation.y=-patrolHeading;
     w.red.visible=Math.floor(uiClock*5)%2===0;w.blue.visible=!w.red.visible;
+    w.helicopter.visible=star>=6;
+    if(w.helicopter.visible){
+      w.helicopter.position.set(px+Math.cos(uiClock*.16)*17,Math.max(18,state.altitude+21),pz+Math.sin(uiClock*.16)*17);
+      w.helicopter.lookAt(px,Math.max(0,state.altitude),pz);w.helicopterRotor.rotation.y+=dt*(star>=7?22:14);
+    }
     const backup=star>2?2:star>1?1:0;
     let nearest=Math.hypot(px-sirenX,pz-sirenZ);
     for(let i=0;i<Math.max(backup,pursuit.length);i++){
@@ -565,6 +656,20 @@ export function createMobility(api){
       u.lights.forEach((l,j)=>l.visible=(Math.floor(uiClock*5+i)+j)%2===0);
       nearest=Math.min(nearest,near);
     }
+    if(api.isIndoor()){
+      roadOfficer=null;capture=Math.max(0,capture-dt*.6);return;
+    }
+    if(api.isWalking()&&star>0&&star<=3&&nearest<1.75&&policeAttackCool<=0){
+      policeAttackCool=1.35;api.damagePlayer?.(4+star*2,`Police punch · ${star} star${star===1?'':'s'}`);
+    }else if(api.isWalking()&&star>=4&&nearest<3.4&&taserCool<=0){
+      taserCool=3.5;api.stunPlayer?.(1.35);api.damagePlayer?.(3+star,`Police taser · ${star} stars`);
+    }
+    if(star>=5&&nearest<42&&policeAttackCool<=0){
+      policeAttackCool=star>=7?1.35:2.25;api.damagePlayer?.(7+star*1.3,`Police fire · ${star} stars`);
+    }
+    if(star>=7&&api.isFlying()&&w.helicopter.visible&&heliAttackCool<=0){
+      heliAttackCool=1.05;api.helicopterHit?.();
+    }
     if(star){
       roadOfficer=null;
       const crossMode=api.isIndoor()||api.isFlying()||api.isBoating()||api.isRail();
@@ -591,6 +696,22 @@ export function createMobility(api){
   }
   function update(dt,t,w){
     uiClock+=dt;alertCool=Math.max(0,alertCool-dt);gadgetCool=Math.max(0,gadgetCool-dt);chime=Math.max(0,chime-dt);
+    policeAttackCool=Math.max(0,policeAttackCool-dt);taserCool=Math.max(0,taserCool-dt);heliAttackCool=Math.max(0,heliAttackCool-dt);
+    for(const loan of state.bankLoans??[]){
+      if(loan.remaining>0&&!loan.bountyCharged&&uiClock>=loan.dueAt){
+        loan.bountyCharged=true;law(loan.remaining,'Overdue bank loan');
+      }
+    }
+    if(activeMatch){
+      const result=activeMatch.step(dt,state.x,state.z),score=`YOU ${result.player}  ·  ${result.opponent} ${result.opponentScore}`;
+      if($('sports-score').textContent!==score)$('sports-score').textContent=score;
+      if($('sports-status').textContent!==result.message)$('sports-status').textContent=result.message;
+      if(result.done&&!matchRewarded){
+        matchRewarded=true;$('sports-action').disabled=true;
+        if(result.winner==='player'){social.changeCash(45,'Sports match win');social.notice(`You won against ${result.opponent} · $45 prize.`)}
+        else social.notice(`${result.opponent} won the match. Better luck next time.`);
+      }
+    }
     grace=Math.max(0,grace-dt);flash=Math.max(0,flash-dt);
     if(flash<=0)$('wanted-flash').hidden=true;
     if(custody){custody.remaining=Math.max(0,custody.remaining-dt);if(custody.remaining<=0)release(false)}
@@ -598,7 +719,6 @@ export function createMobility(api){
       arena.remaining=Math.max(0,arena.remaining-dt);
       if(arena.remaining===0)social.notice('Time up. Restart at the arena terminal.');
     }
-    if(sport)sport.step(dt);
     if(w){
       w.signal(t);walkAcross(dt,w);lawPatrol(dt,w);
       const marker=waypoint??(crossing&&!crossing.done?{x:crossing.to,z:crossing.z}:null);
@@ -721,6 +841,12 @@ export function createMobility(api){
     api.snap();api.refresh();api.focus();
   }
   function resetCockpit(){cockpitOn=false;lamp=false;assist=false;viewTrim=0}
+  function playerDeath(){
+    close(false);ride=null;boarding=null;hijackCutscene=null;arena=null;custody=null;
+    if(activeMatch){activeMatch.dispose();activeMatch=null;$('sports-hud').hidden=true}
+    sportsSelection=null;matchRewarded=false;
+    capture=0;grace=0;leadActive=false;policeAttackCool=taserCool=heliAttackCool=0;
+  }
   function refresh(){
     const output=$('bounty');
     output.textContent=money(state.bounty);$('law-badge').classList.toggle('hot',state.bounty>=60);
@@ -776,9 +902,10 @@ export function createMobility(api){
   function key(e){
     if(hijackCutscene)return true;
     if(e.repeat&&e.code!=='Space')return false;
+    if(activeMatch&&e.code==='KeyX'){e.preventDefault();if(!e.repeat)sportAction();return true}
+    if(activeMatch&&e.code==='Escape'){e.preventDefault();endSports();return true}
     if(panelMode){
       if(e.code==='Escape'){e.preventDefault();close();return true}
-      if(sport&&e.code==='Space'&&!(e.target instanceof HTMLButtonElement)){e.preventDefault();if(!e.repeat)sport.action();return true}
       return true;
     }
     if(e.code==='KeyT'){e.preventDefault();if(ride||custody)return true;atlasRegion=regionAt(...api.position()).id;open('atlas');return true}
@@ -801,6 +928,7 @@ export function createMobility(api){
     if(down)flightKeys.add(code);else flightKeys.delete(code);
   }
   $('transit-close').addEventListener('click',()=>close());$('transit-toggle').addEventListener('click',()=>{if(panelMode){close();return}if(!ride&&!custody){atlasRegion=regionAt(...api.position()).id;open('atlas')}});
+  $('sports-action').addEventListener('click',sportAction);$('sports-exit').addEventListener('click',()=>endSports());
   $('law-badge').addEventListener('click',()=>{if(!ride&&!custody)open('law')});
   $('ride-exit').addEventListener('click',rideInteract);$('ride-view').addEventListener('click',bridgeToggle);$('cockpit-view').addEventListener('click',bridgeToggle);
   $('bridge-light').addEventListener('click',()=>{lamp=!lamp;refresh();api.focus()});
@@ -811,14 +939,15 @@ export function createMobility(api){
   $('cabin-call').addEventListener('click',()=>{if(ride){const s=seats[ride.cls];if(s)ride.service=`VIP service · Your attendant brings ${s.drink.toLowerCase()}.`;refresh();api.focus()}});
   $('cabin-tv-toggle').addEventListener('click',()=>{if(ride&&seats[ride.cls]?.screen){if(ride.tv)ride.channel=(ride.channel+1)%3;ride.tv=true;refresh();api.focus()}});
   $('cabin-look').addEventListener('click',()=>{viewTrim=viewTrim===0?.39:viewTrim>0?-.39:0;api.snap();api.focus()});
-  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,handle,fine,law,airPiracyTick:()=>law(8,'Ongoing air piracy'),collision,runSignals,gadget,bridgeToggle,resetCockpit,
+  return {refresh,update,key,keyUp,clearFlightInputs,flightInput,atStation,handle,fine,law,airPiracyTick:()=>law(8,'Ongoing air piracy'),collision,runSignals,gadget,bridgeToggle,resetCockpit,playerDeath,
     panel:()=>panelMode,close,rideInteract,outOfRide,ride:()=>ride,waypoint:()=>waypoint,venueAction,leaveVenueState,detained:()=>!!custody,round:()=>arena,
+    sporting:()=>!!activeMatch,sportAction,endSports,
     cutscene:()=>!!hijackCutscene,
     cockpit:()=>cockpitOn,trim:()=>viewTrim,assist:()=>assist,lamp:()=>lamp,mark,patrolTalk:()=>open('law',{pay:true}),
     inspect:()=>({view:panelMode,gate:api.venue()?gatePasses.get(api.venue().stop.id)??null:null,
       boarding:boarding?{from:boarding.ride.s.id,to:boarding.ride.d.id,pilot:boarding.pilot}:null,
       ride:ride?{from:ride.s.id,to:ride.d.id,type:ride.type,line:ride.line,pack:ride.pack?.name,progress:ride.time/ride.duration,arrived:!!ride.arrived,paid:ride.paid,pilotControl:!!ride.pilotControl,cls:ride.cls,y:ride.pose?.y,tv:ride.tv,service:ride.service,speed:ride.pilotSpeed}:null,
-      crossing:crossing?{...crossing}:null,waypoint:waypoint?.id??null,bountyLog:log,sport:sport?.status()??null,cockpit:cockpitOn,light:lamp,hold:assist,trim:viewTrim,
+      crossing:crossing?{...crossing}:null,waypoint:waypoint?.id??null,bountyLog:log,sport:activeMatch?.status()??null,cockpit:cockpitOn,light:lamp,hold:assist,trim:viewTrim,
       wanted:wanted(),units:Number(leadActive)+pursuit.filter(p=>p.mesh.visible).length,capture,custody,grace,arena,care:[...careDone],wardTaken,wardDrill,hijackCutscene:hijackCutscene?.elapsed??0})
   };
 }

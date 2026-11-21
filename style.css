@@ -58,6 +58,13 @@ body.aviation .speed-line b{width:auto;min-width:31px;padding:1px 3px}
 #flight-touch,body.aviation #touch{display:none}
 #choose-mode{color:#eef6f3;text-shadow:0 1px 5px #0b1119;display:block;text-align:center;font-size:var(--xs);font-weight:800;text-decoration:underline;margin-top:4px;white-space:nowrap}
 .notice{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);max-width:82%;padding:9px 13px;border:1px solid #6f9e8e;border-radius:6px;color:var(--mint);background:#14252af2;white-space:normal;text-align:center;font-size:var(--xs);font-weight:800;z-index:4;pointer-events:none}
+.player-health{position:absolute;z-index:2;top:104px;left:24px;width:min(180px,38vw);padding:7px 9px;border:1px solid #617181;border-radius:7px;background:#101823ed;box-shadow:0 10px 24px #090c1640}
+.health-label{display:block;color:#d9e5e6;font-size:.68rem;font-weight:800;letter-spacing:.13em;margin-bottom:5px}
+.player-health>i{display:block;height:8px;overflow:hidden;border-radius:5px;background:#36434a}
+.player-health b{display:block;width:100%;height:100%;background:#56c77a;transition:width 120ms linear,background 180ms linear}
+.death-screen{position:absolute;z-index:7;inset:0;display:grid;align-content:center;justify-items:center;text-align:center;padding:24px;background:#0b1119bf;backdrop-filter:blur(4px)}
+.death-screen h2{font:800 clamp(1.7rem,4vw,2.7rem)/1.05 var(--display);text-transform:uppercase;margin:10px 0}
+.death-screen p{max-width:360px;color:#d2dfe3}
 .interact{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);z-index:2;background:#15262bf2;border:1px solid #6ba790;max-width:71%;min-width:146px}
 .interact kbd{color:var(--mint);border-color:#6a9b87;background:#24413b}.interact strong{line-height:1.17}
 .dialogue,.crash{position:absolute;z-index:6;border:1px solid #62847e;border-radius:11px;box-shadow:0 13px 42px #050c1466;background:#14202aef;padding:15px;color:#edf5ee;overflow:auto}

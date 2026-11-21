@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./base.css">
-  <link rel="stylesheet" href="./style.css?v=connections">
-  <link rel="stylesheet" href="./mobility.css?v=islands-transit">
+  <link rel="stylesheet" href="./style.css?v=gameplay-overhaul">
+  <link rel="stylesheet" href="./mobility.css?v=gameplay-overhaul">
   <link rel="stylesheet" href="./terminal.css?v=streets">
 </head>
 <body>
@@ -75,12 +75,14 @@
         <div class="district"><div class="eyebrow" id="location"><i></i> OCEAN DISTRICT</div><h2 id="district">Boardwalk Blvd</h2></div>
         <div class="objective" aria-live="polite"><div class="eyebrow"><i></i><span id="objective-tag">FREE ROAM</span></div><strong id="objective">Explore Pacifica Bay</strong><span id="detail">No timer. The city is yours.</span></div>
       </div>
+      <div id="player-health" class="player-health" role="progressbar" aria-label="Player health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <span class="health-label">HEALTH</span><i><b id="player-health-fill"></b></i>
+      </div>
       <div id="notice" class="notice" role="status" hidden></div>
       <div class="wanted-hud" id="wanted-hud" hidden><output id="wanted-stars" aria-label="Wanted stars"></output><small id="wanted-status"></small><progress id="wanted-capture" max="1" value="0" aria-label="Capture progress" hidden></progress></div>
       <div class="wanted-flash" id="wanted-flash" aria-hidden="true" hidden><strong>★</strong><span>WANTED LEVEL UP</span></div>
       <div id="combat-status" class="combat-status" hidden>
         <div><strong id="combat-weapon">Hands</strong><small id="combat-target">No target ahead</small></div>
-        <meter id="combat-health" min="0" max="100" value="100" aria-label="Player vitality"></meter>
       </div>
       <button id="interact" class="tool interact" type="button" hidden><kbd>E</kbd><strong id="interact-label">Interact</strong></button>
       <div class="world-tools">
@@ -96,6 +98,11 @@
         <div class="eyebrow" id="ride-line"></div><h2 id="ride-title"></h2><small id="ride-sector"></small>
         <progress id="ride-progress" max="1" value="0" aria-label="Journey progress"></progress>
         <div class="ride-actions"><button id="ride-exit" class="tool" type="button" hidden>Disembark <kbd>E</kbd></button><button id="ride-view" class="tool" type="button" hidden>Inside view <kbd>P</kbd></button></div>
+      </section>
+      <section id="sports-hud" class="sports-hud" aria-live="polite" hidden>
+        <div class="eyebrow">SPORTS CENTER · 1v1</div><h2 id="sports-title"></h2>
+        <p id="sports-instructions"></p><output id="sports-score"></output><small id="sports-status"></small>
+        <div><button id="sports-action" class="tool" type="button"></button><button id="sports-exit" class="tool" type="button">End match</button></div>
       </section>
       <section id="cabin-panel" class="cabin-panel" aria-labelledby="cabin-title" hidden>
         <div><small class="eyebrow" id="cabin-line">PASSENGER SERVICE</small><h2 id="cabin-title"></h2><p id="cabin-seat"></p></div>
@@ -133,6 +140,10 @@
         <div class="eyebrow"><i></i> FLIGHT INCIDENT</div><h2 id="crash-title">Aircraft wrecked</h2>
         <p id="crash-details"></p><div><button id="crash-walk" class="tool">Continue on foot</button><button id="crash-recover" class="tool">Recover trainer</button></div>
       </section>
+      <section id="death-screen" class="death-screen" role="alert" hidden>
+        <div class="eyebrow"><i></i> YOU WERE DOWNED</div><h2>Respawning at the garage</h2>
+        <p id="death-details">Your wallet and bounty were lost. Bank savings are safe.</p>
+      </section>
       <div id="load-status" role="status"><span>Loading Pacifica Bay…</span></div>
       <div class="mobile-drive"><button id="mobile-start" type="button" disabled>Start driving</button><a href="#fleet" id="choose-mode">Vehicles &amp; modes ↓</a></div>
       <div id="result" class="result" hidden>
@@ -147,7 +158,7 @@
       <div id="flight-touch" class="touch" aria-label="Touch flight controls"><div><button data-key="KeyA" aria-label="Bank left">←</button><button data-key="KeyD" aria-label="Bank right">→</button></div><div><button data-key="ArrowUp" aria-label="Pitch up">↑</button><button data-key="ArrowDown" aria-label="Pitch down">↓</button></div><div><button data-key="KeyW" aria-label="Increase throttle">+</button><button data-key="KeyS" aria-label="Decrease throttle">−</button></div><button data-key="Space" aria-label="Brake">BRK</button></div>
     </section>
   </main>
-  <script type="module" src="./game.js?v=fleet-variants"></script>
+  <script type="module" src="./game.js?v=gameplay-overhaul"></script>
 <script data-pplx-inline-edit>
 (function () {
   if (window === window.top) return;

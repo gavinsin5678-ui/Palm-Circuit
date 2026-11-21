@@ -1,88 +1,154 @@
-const NS='http://www.w3.org/2000/svg';
-function shape(name,attrs={}){const n=document.createElementNS(NS,name);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);return n}
-const modes={
-  basketball:{name:'Basketball',icon:'01',instruction:'Time five releases against the court AI. Finish ahead on the scoreboard to win $45.',court:'#9b604b',line:'#edbb9c',ball:'#f4a06a',target:.51,opponent:.62},
-  football:{name:'Football',icon:'02',instruction:'Take five strikes against the moving keeper. Finish with more goals than the keeper AI to win $45.',court:'#365d3f',line:'#c0d2a8',ball:'#f2e9d3',target:.53,opponent:.58},
-  tennis:{name:'Tennis',icon:'03',instruction:'Play five returns in a tennis match. Win more points than the opponent to earn $45.',court:'#344f76',line:'#aec5e4',ball:'#dcee7a',target:.67,opponent:.66}
-};
-const line=(x1,y1,x2,y2,stroke='#f0e9d0',w=2)=>shape('line',{x1,y1,x2,y2,stroke,'stroke-width':w});
-const rect=(x,y,w,h,fill,other={})=>shape('rect',{x,y,width:w,height:h,fill,...other});
-const circle=(cx,cy,r,fill,other={})=>shape('circle',{cx,cy,r,fill,...other});
-const text=(x,y,val,attrs={})=>{const n=shape('text',{x,y,fill:'#e9f2ee','font-size':14,'font-weight':700,'text-anchor':'middle',...attrs});n.textContent=val;return n};
-const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+import * as T from './vendor/three.module.min.js';
+import {person,animatePerson} from './life-world.js?v=streets';
 
-export function sportsCard(id,pay){
-  const mode=modes[id], root=document.createElement('div');
-  const svg=shape('svg',{viewBox:'0 0 640 313',class:'sport-court',role:'img','aria-label':`${mode.name} court and timing meter`});
-  const scoreboard=document.createElement('p');scoreboard.className='sport-status';scoreboard.setAttribute('aria-live','polite');
-  const shoot=document.createElement('button');shoot.className='launch sport-action';
-  shoot.textContent=id==='basketball'?'Release shot':id==='football'?'Take shot':'Return ball';
-  root.append(scoreboard,svg,shoot);
-  svg.append(rect(0,0,640,313,'#14252f'),rect(14,14,612,238,mode.court,{rx:8}),rect(39,31,562,207,'none',{stroke:mode.line,'stroke-width':2,rx:4}));
-  const shadow=shape('ellipse',{cx:320,cy:216,rx:17,ry:4,fill:'#18222b55'}),ball=circle(320,208,10,mode.ball,{stroke:'#25313b','stroke-width':2});
-  let keeper=null,racket=null,hit=0,opponent=0,round=0,feedback='Get ready',time=0,travel=0,success=false,angle=0,finished=false,resultPaid=false,started=false;
-  if(id==='basketball'){
-    svg.append(line(0,176,640,176,mode.line,3),shape('path',{d:'M172 237L245 159H395L468 237 M205 218Q318 154 435 218',stroke:mode.line,'stroke-width':3,fill:'none'}),rect(309,52,22,102,'#526171'),rect(267,49,106,68,'#d3dce1',{rx:4,stroke:'#263746','stroke-width':4}),rect(298,68,44,32,'none',{stroke:'#555e65','stroke-width':3}),shape('path',{d:'M294 102Q320 91 346 102L336 128H304Z',fill:'#e9ecdc65',stroke:'#e9ecdc','stroke-width':2}),shape('ellipse',{cx:320,cy:102,rx:27,ry:6,fill:'none',stroke:'#e77452','stroke-width':5}));
-  }else if(id==='football'){
-    const net=rect(199,47,242,94,'#244337',{stroke:'#ecf0de','stroke-width':5});svg.append(net);
-    for(let x=209;x<440;x+=17)svg.append(line(x,50,x,138,'#c6d5bc',.72));
-    for(let y=58;y<140;y+=13)svg.append(line(201,y,439,y,'#c6d5bc',.72));
-    svg.append(shape('path',{d:'M122 218L169 147H469L518 218 M230 221Q320 178 410 221',stroke:mode.line,'stroke-width':2,fill:'none'}));
-    keeper=shape('g');keeper.append(circle(0,-27,8,'#dca17c'),rect(-11,-19,22,26,'#e9a958',{rx:4}),line(-9,-13,-22,-19,'#e9a958',6),line(9,-13,22,-19,'#e9a958',6),line(-6,5,-10,16,'#293947',5),line(6,5,10,16,'#293947',5));svg.append(keeper);
-  }else{
-    svg.append(shape('path',{d:'M122 237L202 39H438L518 237 M162 137H478 M320 137V237 M209 83H431',stroke:mode.line,'stroke-width':2.8,fill:'none'}));
-    for(let x=164;x<478;x+=14)svg.append(line(x,115,x,136,'#e3edf3aa',1));
-    svg.append(line(152,115,488,115,'#eaf4f2',3),line(152,138,488,138,'#baced9',1),line(152,113,152,145,'#eaf4f2',4),line(488,113,488,145,'#eaf4f2',4));
-    racket=shape('g');racket.append(line(0,0,0,26,'#e9af7e',4),shape('ellipse',{cx:0,cy:-10,rx:11,ry:16,fill:'#e1f1ef66',stroke:'#f1bd89','stroke-width':4}));svg.append(racket);
-  }
-  svg.append(shadow,ball);
-  svg.append(rect(65,272,510,13,'#2d4451',{rx:6}),text(320,306,'TIMING WINDOW',{fill:'#abc2c4','font-size':11,'letter-spacing':2.4}));
-  const zone=rect(320,272,50,13,'#8ee2be',{rx:5}),dot=rect(65,266,5,25,'#f7e7bc',{rx:2});svg.append(zone,dot);
-  const windowCenter=()=>clamp(mode.target+Math.sin(round*2.1)*.115,.27,.79);
-  const position=()=>{const q=(time*(.53+round*.034)+.13)%2;return q<=1?q:2-q};
-  function refresh(){
-    const caption=finished?`You ${hit} · Opponent ${opponent} · ${hit>opponent?'Match won · $45 prize':'Match lost · Replay to win'}`:`You ${hit} · Opponent ${opponent} · Attempt ${round+1}/5 · ${feedback}`;
-    if(scoreboard.textContent!==caption)scoreboard.textContent=caption;
-    zone.setAttribute('x',65+510*windowCenter()-29);zone.setAttribute('width',58);dot.setAttribute('x',65+510*position());
-    if(keeper)keeper.setAttribute('transform',`translate(${320+Math.sin(time*5.1)*65} 117)`);
-    if(racket)racket.setAttribute('transform',`translate(${365-Math.sin(time*3.4)*40} 204) rotate(${travel>0?25:8})`);
-    let x=320,y=id==='tennis'?65+position()*150:211;
-    if(travel>0){
-      const p=clamp(travel/.53,0,1);
-      x+=angle*p*122;
-      y=211-(id==='basketball'?107:99)*p-Math.sin(p*Math.PI)*(id==='basketball'?66:26);
-    }
-    ball.setAttribute('cx',x);ball.setAttribute('cy',y);ball.setAttribute('r',10-(210-y)*.029);
-    shadow.setAttribute('cx',x);shadow.setAttribute('cy',Math.min(226,y+16));
-  }
-  function action(){
-    if(finished){hit=opponent=round=0;feedback='New match';time=travel=0;finished=false;resultPaid=false;shoot.textContent=id==='basketball'?'Release shot':id==='football'?'Take shot':'Return ball';refresh();return}
-    if(travel>0)return;
-    const p=position(),center=windowCenter();
-    success=Math.abs(p-center)<.113;
-    angle=id==='football'?(Math.sin(time*5.1)>0?-1:1)*(success?.80:1.45):success?.025:(p>center?.65:-.65);
-    travel=.001;started=true;feedback='Ball in play';
-  }
-  function step(dt){
-    if(finished)return;
-    if(travel>0){
-      travel+=dt;
-      if(travel>.61){
-        hit+=Number(success);round++;feedback=success?(id==='tennis'?'Clean return':'On target'):(id==='football'?'Shot saved':'Missed');
-        const aiSeed=(time*7.31+round*1.73)%1;
-        const aiSuccess=aiSeed<mode.opponent;
-        opponent+=Number(aiSuccess);
-        if(!aiSuccess&&id==='football')feedback+=' · Keeper beaten';
-        travel=0;
-        if(round===5){
-          finished=true;shoot.textContent='Play again';
-          if(hit>opponent&&!resultPaid){resultPaid=true;pay(45)}
-        }
-      }
-    }else time+=dt;
-    refresh();
-  }
-  shoot.addEventListener('click',action);refresh();
-  return {root,step,action,status:()=>({id,round,hit,opponent,finished,started,meter:position(),center:windowCenter()})};
+export const sportModes={
+  basketball:{name:'Basketball',icon:'1v1 · shoot and defend',instruction:'Move into the court and face the hoop. Press X to shoot; the first player to score three baskets wins.',action:'Shoot'},
+  football:{name:'Football',icon:'Penalty shootout',instruction:'Move into the court, line up with the goal, and press X to shoot. The first player to score three goals wins.',action:'Shoot'},
+  tennis:{name:'Tennis',icon:'Singles rally',instruction:'Move around the court and press X to serve or return the ball when it is close. First to three points wins.',action:'Serve / Return'},
+  volleyball:{name:'Volleyball',icon:'1v1 · serve and spike',instruction:'Move around the court, use Space to jump, and press X to serve or spike the ball when it is close. First to three points wins.',action:'Serve / Spike'},
+  badminton:{name:'Badminton',icon:'Singles rally',instruction:'Move around the court and press X to serve or return the shuttle when it is close. First to three points wins.',action:'Serve / Return'}
+};
+
+const boxGeometry=new T.BoxGeometry();
+const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+function box(parent,x,y,z,w,h,d,color){
+  const mesh=new T.Mesh(boxGeometry,new T.MeshLambertMaterial({color}));
+  mesh.userData.sportMaterial=true;mesh.position.set(x,y,z);mesh.scale.set(w,h,d);parent.add(mesh);return mesh;
 }
-export const sportModes=modes;
+function line(parent,x,z,w,d,color='#dce7dc'){
+  return box(parent,x,.09,z,w,.035,d,color);
+}
+function makeCourt(group,id){
+  const racquet=['tennis','volleyball','badminton'].includes(id);
+  const goalColor=id==='basketball'?'#f08c62':id==='football'?'#8ed0a4':'#d7e3df';
+  if(racquet){
+    for(const z of [-14,14])line(group,0,z,23,.12);
+    for(const x of [-11.5,11.5])line(group,x,0,.12,28);
+    line(group,0,0,.12,28);
+    for(const z of [-7,7])line(group,0,z,23,.09);
+    box(group,0,.8,0,23,.06,.10,'#e5e9d8');
+    for(const x of [-11.1,11.1])box(group,x,.73,0,.14,1.35,.14,'#e5e9d8');
+  }else if(id==='basketball'){
+    for(const z of [-15,15]){
+      box(group,0,3.8,z,4.2,2.1,.16,'#e1e9e2');
+      const rim=new T.Mesh(new T.TorusGeometry(.66,.055,8,24),new T.MeshLambertMaterial({color:goalColor}));
+      rim.userData.sportMaterial=true;rim.userData.sportGeometry=true;rim.rotation.x=Math.PI/2;rim.position.set(0,3.05,z+(z<0?.65:-.65));group.add(rim);
+      box(group,0,1.6,z+(z<0?-.75:.75),4.6,3.2,.18,'#627988');
+    }
+    for(const x of [-11.5,11.5])line(group,x,0,.12,29);
+    for(const z of [-14.5,14.5])line(group,0,z,23,.12);
+    line(group,0,0,.1,29);
+  }else{
+    for(const z of [-15,15]){
+      box(group,0,1.65,z,7.2,3.3,.16,goalColor);
+      for(const x of [-3.6,3.6])box(group,x,1.65,z,.14,3.4,.15,'#e3e7d8');
+      box(group,0,3.34,z,.15,3.45,.15,'#e3e7d8');
+    }
+    for(const x of [-11.5,11.5])line(group,x,0,.12,29);
+    for(const z of [-14.5,14.5])line(group,0,z,23,.12);
+    line(group,0,0,.1,29);
+  }
+}
+
+export function createSportsMatch(scene,id,opponentName){
+  const mode=sportModes[id];
+  if(!mode)throw new Error(`Unknown sports mode: ${id}`);
+  const group=new T.Group();scene.add(group);makeCourt(group,id);
+  const rival=person(id==='basketball'?'#e08a5c':id==='football'?'#77ae84':id==='tennis'?'#7d95c5':id==='volleyball'?'#b485c0':'#c5a36d');
+  group.add(rival.model);rival.model.position.set(0,.04,-8);rival.model.rotation.y=0;
+  const ballGeometry=id==='badminton'?new T.ConeGeometry(.20,.60,8):new T.SphereGeometry(id==='basketball'?.32:id==='football'?.28:id==='volleyball'?.30:.20,16,12);
+  const ballMaterial=new T.MeshLambertMaterial({color:id==='basketball'?'#e7854d':id==='football'?'#ece7d9':id==='volleyball'?'#f0d477':id==='badminton'?'#e5eadc':'#dce4ef'});
+  const ball=new T.Mesh(ballGeometry,ballMaterial);ball.userData.sportMaterial=true;ball.userData.sportGeometry=true;group.add(ball);ball.visible=false;
+  const score={player:0,opponent:0},target=3;
+  let state='ready',cooldown=.8,flight=null,elapsed=0,opponentX=0,disposed=false;
+  const status=()=>({id,name:mode.name,opponent:opponentName,player:score.player,opponentScore:score.opponent,done:state==='done',winner:score.player>=target?'player':'opponent',message:state==='done'?score.player>=target?'You won the match.':'Your opponent won the match.':state==='ready'?'Move close to the ball and press X.':state==='flight'?'Move to the ball and press X to return it.':`Score ${target} points to win.`});
+  const resetBall=(delay=.8)=>{
+    flight=null;ball.visible=false;state='ready';cooldown=delay;
+  };
+  const point=winner=>{
+    if(state==='done')return;
+    score[winner]++;
+    if(score[winner]>=target){state='done';flight=null;ball.visible=false;return}
+    resetBall(1.2);
+  };
+  function launch(owner,x,z,heading,jump=0){
+    const toGoal=id==='basketball'||id==='football';
+    const direction=heading;
+    const speed=id==='basketball'?23:id==='football'?27:id==='badminton'?15:18;
+    const startY=(id==='football'?.48:id==='badminton'?2.2:1.25)+(owner==='player'&&id==='volleyball'?Math.min(1.2,jump):0);
+    let lift=id==='basketball'?8.1:id==='football'?2.4:id==='badminton'?5.0:id==='volleyball'?6.4:4.7;
+    if(toGoal){
+      const goalY=id==='basketball'?3.05:1.0,goalZ=owner==='player'?-15:15,
+        travelTime=Math.abs(goalZ-z)/speed;
+      lift=clamp((goalY-startY+4.905*travelTime*travelTime)/travelTime,1.3,9.5);
+    }
+    ball.position.set(x,startY,z);
+    if(id==='badminton')ball.rotation.x=Math.PI;
+    ball.visible=true;
+    flight={owner,x,z,y:ball.position.y,vx:Math.sin(direction)*speed,vz:-Math.cos(direction)*speed,vy:lift,goal:toGoal};
+    state='flight';
+  }
+  function action(x,z,heading,jump=0){
+    if(disposed||state==='done'||cooldown>0)return false;
+    if(flight){
+      if(flight.owner==='player')return false;
+      const d=Math.hypot(x-flight.x,z-flight.z);
+      if(d>(id==='badminton'?3.2:3.8)||flight.y>4.5)return false;
+      launch('player',x,z,heading,jump);return true;
+    }
+    const d=Math.hypot(x-ball.position.x,z-ball.position.z);
+    if(state==='ready'&&ball.visible&&d>3.8)return false;
+    launch('player',x,z,heading,jump);return true;
+  }
+  function step(dt,x,z){
+    if(disposed)return status();
+    elapsed+=dt;cooldown=Math.max(0,cooldown-dt);
+    const courtZ=id==='basketball'||id==='football'?13:8;
+    const targetX=flight?.x??x;
+    opponentX+=Math.max(-1,Math.min(1,targetX-opponentX))*dt*2.7;
+    rival.model.position.set(Math.max(-10,Math.min(10,opponentX)),.04,-courtZ);
+    animatePerson(rival,elapsed,Math.abs(targetX-opponentX)>.6?2.4:0);
+    if(state==='ready'&&cooldown<=0){
+      if(id==='basketball'||id==='football'){
+        const aiHeading=Math.PI;
+        launch('opponent',opponentX,-courtZ,aiHeading);
+      }else{
+        const heading=Math.atan2(x-opponentX,-(z+courtZ));
+        launch('opponent',opponentX,-courtZ,heading);
+      }
+    }
+    if(!flight)return status();
+    flight.x+=flight.vx*dt;flight.z+=flight.vz*dt;flight.y+=flight.vy*dt;flight.vy-=9.81*dt;
+    ball.position.set(flight.x,Math.max(.18,flight.y),flight.z);
+    if(id==='badminton')ball.rotation.z=Math.atan2(flight.vx,-flight.vz);
+    if(flight.goal){
+      const goalZ=flight.owner==='player'?-15:15,atGoal=(goalZ<0&&flight.vz<0&&flight.z<=goalZ)||(goalZ>0&&flight.vz>0&&flight.z>=goalZ);
+      if(atGoal){
+        const yGood=id==='basketball'?flight.y>2.65&&flight.y<3.55:flight.y<3.2;
+        const xGood=Math.abs(flight.x)<(id==='basketball'?.72:3.25);
+        point((yGood&&xGood)?flight.owner:flight.owner==='player'?'opponent':'player');return status();
+      }
+    }else if(flight.owner==='opponent'&&flight.z>=courtZ&&flight.vz>0){
+      point('opponent');return status();
+    }else if(flight.owner==='player'&&flight.z<=-courtZ&&flight.vz<0){
+      const canReach=Math.abs(opponentX-flight.x)<2.7&&flight.y<3.6&&Math.sin(elapsed*1.17+2.1)>-.85;
+      if(canReach){
+        const heading=Math.atan2(x-opponentX,-(z+courtZ));
+        launch('opponent',opponentX,-courtZ,heading);
+        return status();
+      }
+      point('player');return status();
+    }
+    if(flight.y<=.2||Math.abs(flight.x)>12||Math.abs(flight.z)>17){
+      if(flight.goal)point(flight.owner==='player'?'opponent':'player');
+      else point((flight.owner==='player'&&flight.z<0)||(flight.owner==='opponent'&&flight.z>0)?flight.owner:flight.owner==='player'?'opponent':'player');
+    }
+    return status();
+  }
+  return {
+    action,
+    step,
+    status,
+    dispose(){if(disposed)return;disposed=true;scene.remove(group);group.traverse(o=>{if(o.userData.sportGeometry)o.geometry.dispose();if(o.userData.sportMaterial)o.material.dispose()})}
+  };
+}

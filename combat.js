@@ -146,7 +146,6 @@ export function createCombat(api){
       if(e.radius)e.mesh.scale.setScalar(.27+e.radius*v);
       if(e.orb){e.mesh.position.lerpVectors(...e.orb,v);e.mesh.position.y+=Math.sin(v*Math.PI)*1.35}
     }
-    if(!records.size)return;
     for(const id of exposures){
       const r=records.get(id);
       if(time<r.poison)continue;
@@ -154,15 +153,34 @@ export function createCombat(api){
       api.law(340,`Violet exposure fatality · ${r.name}`);
     }
     for(const p of api.actors()){
-      const r=record(p);if(!r)continue;
+      let r=record(p);
+      const idValue=String(p.id).split('').reduce((sum,c)=>sum+c.charCodeAt(0),0),
+        aggressive=!!p.rival||!!p.hostile||state.heat>=3&&idValue%5===0;
+      if(!r&&aggressive){
+        const at=point(p);r={hp:100,x:at.x,z:at.z,last:-99,poison:0,rescued:false};records.set(p.id,r);
+      }
+      if(!r)continue;
       const model=p.model;
-      if(r.hp===100&&!r.poison&&model.userData.inCombat){
+      if(!aggressive&&r.hp===100&&!r.poison&&model.userData.inCombat){
         model.userData.inCombat=false;model.rotation.x=p.resting?-Math.PI/2:0;model.rotation.z=0;
         continue;
       }
-      if(r.hp===100&&!r.poison)continue;
+      if(!aggressive&&r.hp===100&&!r.poison)continue;
       model.userData.inCombat=true;model.visible=true;
       const here=point(p);
+      if(aggressive&&r.hp>0&&!p.resting){
+        const dx=state.x-r.x,dz=state.z-r.z,d=Math.hypot(dx,dz),pace=2.85;
+        if(d>1.3){
+          const dest={x:r.x+dx/d*pace*dt,z:r.z+dz/d*pace*dt};
+          if(api.canMove(dest.x,dest.z)){r.x=dest.x;r.z=dest.z}
+        }
+        if(d<1.65&&eligible()&&time>(r.counter??0)){
+          r.counter=time+.95;api.damagePlayer?.(9+state.heat*1.5,`Punch from ${p.name}`);api.sound(102);
+        }
+        animatePerson(p,time,pace);
+        model.position.x+=r.x-here.x;model.position.z+=r.z-here.z;
+        continue;
+      }
       if(r.hp>0&&time-r.last>.38&&time-r.last<4.5&&!r.poison&&!p.resting){
         const d=Math.hypot(r.x-state.x,r.z-state.z),pace=p.rival&&eligible()&&d<9?2.5:2.85;
         const dir=p.rival&&eligible()&&d<9?-1:1;
@@ -172,9 +190,7 @@ export function createCombat(api){
           if(api.canMove(dest.x,dest.z)){r.x=dest.x;r.z=dest.z}
         }
         if(p.rival&&d<1.65&&eligible()&&time>(r.counter??0)){
-          r.counter=time+.85;state.vitality=Math.max(0,state.vitality-17);api.sound(102);
-          api.notice(`${p.name} hit back · ${state.vitality}% vitality`);
-          if(!state.vitality){api.recoverFromFight();return}
+          r.counter=time+.85;api.damagePlayer?.(17,`Punch from ${p.name}`);api.sound(102);
         }
         animatePerson(p,time,pace);
       }else animatePerson(p,time,0);
@@ -214,11 +230,10 @@ export function createCombat(api){
     const show=eligible();attackButton.hidden=!show;equip.hidden=!show;target.hidden=!show;if(!show)return;
     const gear=weapons[state.weapon],a=aims(gear)[0];
     equip.title=`Cycle weapons (B) · ${gear.name}`;
-    const key=`${state.weapon}/${a?.p.id}/${a?vital(a.p):0}/${state.vitality}`;
+    const key=`${state.weapon}/${a?.p.id}/${a?vital(a.p):0}`;
     if(key===shown)return;shown=key;
     document.getElementById('combat-weapon').textContent=gear.name;
     document.getElementById('combat-target').textContent=a?`${a.p.name} · ${vital(a.p)}%`:'No target ahead';
-    const meter=document.getElementById('combat-health');meter.value=state.vitality;meter.title=`Vitality: ${state.vitality}%`;
     target.classList.toggle('has-target',!!a);
   }
   function drawWeapon(player){

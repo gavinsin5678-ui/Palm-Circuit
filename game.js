@@ -3,13 +3,13 @@ import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} fr
 import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=streets';
 import {createSocial} from './social.js?v=connections';
-import {createMobility} from './mobility.js?v=fleet-variants';
-import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=rail-network';
-import {makeTerminal,venueFor} from './terminal-world.js?v=streets';
+import {createMobility} from './mobility.js?v=gameplay-overhaul';
+import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
+import {makeTerminal,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
 import {fleetProducts} from './fleet.js?v=fleet-variants';
-import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=fleet-variants';
-import {createCombat} from './combat.js?v=streets';
+import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=gameplay-overhaul';
+import {createCombat} from './combat.js?v=gameplay-overhaul';
 import {flightEnvelope,coordinatedTurnRate,stepWatercraft} from './vehicle-physics.js?v=handling';
 import {createAirDefense} from './air-defense.js?v=hijack';
 
@@ -46,7 +46,7 @@ for(const [id,p] of Object.entries(fleetProducts))vehicleName[id]=p.name;
 const state={mode:'roam',vehicle:'car',phase:'ready',time:0,elapsed:0,checkpoint:0,camera:0,x:3.5,z:75,heading:0,speed:0,vx:0,vz:0,steer:0,hit:0,hits:0,
   altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,waterY:0,waterVertical:0,
   vehicleHealth:110,hijackedAirliner:false,hijackTime:0,hijackBountyTick:0,
-  cash:75,heat:0,bounty:0,owned:[],gadget:null,jump:0,track:0,railY:0,ability:0,abilityCool:0,signal:null,
+  cash:75,bankBalance:0,bankLoans:[],bankRobberies:{},heat:0,bounty:0,owned:[],gadget:null,jump:0,track:0,railY:0,ability:0,abilityCool:0,signal:null,
   job:'available',collected:0,fins:false,dialogue:null,swimming:false,interior:null,message:'',messageTime:0,crash:null};
 const keys=new Set(), touchKeys=new Set();
 const step=1/60, minmax=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -55,7 +55,7 @@ const cameraTarget=new T.Vector3(), lookAt=new T.Vector3(), currentLook=new T.Ve
 const prefersReduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let core, world, renderer, snap=true, perfFrames=0, perfStart=performance.now();
 let audio,osc,harmonic,volume,sounded=false, manual=false, acc=0, last=0, lastPaint=0, scale=1;
-let indoor=null,insidePlace=null,groundPosition=null,lastMount=null,interactable=null,simTime=0,jumpVelocity=0;
+let indoor=null,insidePlace=null,groundPosition=null,lastMount=null,interactable=null,simTime=0,jumpVelocity=0,deathTimer=0,stunTimer=0;
 const speedBars=Array.from({length:12},()=>document.createElement('i'));$('meter').replaceChildren(...speedBars);
 const buttons=[...document.querySelectorAll('.mode')], vehicles=[...document.querySelectorAll('.vehicle')],start=$('start-btn'),mobileStart=$('mobile-start');
 for(const [id,p] of Object.entries(fleetProducts)){
@@ -87,10 +87,12 @@ const districtAt=(x,z)=>{const island=islandAt(x,z);return island?[island.tag,is
 const mobility=createMobility({state,social,refresh,syncSelection,clearKeys,position:worldPosition,focus:()=>focusView(false),snap:()=>{snap=true},
   sync:syncSelection, sound:playChime,startRide,ridePosition,endRide,driveTransitVehicle,hit:solidHit,isIndoor:()=>!!indoor,isWalking:walking,isRoadVehicle:motoring,isFlying:flying,isBoating:boating,isRail:rail,
   venue:()=>indoor?.zone?indoor:null,enterVenue,leaveVenue,goRunway,takeoverAircraft,
-  wardActions:p=>combat.wardActions(p),expose:p=>combat.expose(p),aid:p=>combat.aid(p)});
+  damagePlayer,stunPlayer:duration=>{stunTimer=Math.max(stunTimer,duration)},helicopterHit:()=>flying()?flightCrash('Police helicopter strike',state.x,state.z,state.altitude,false):damagePlayer(17,'Police helicopter gunfire'),
+  actorVital:p=>combat.vital(p),wardActions:p=>combat.wardActions(p),expose:p=>combat.expose(p),aid:p=>combat.aid(p)});
 const combat=createCombat({state,walking,actors:combatActors,scene:()=>indoor?.scene??world?.scene,
-  blocked:()=>mobility.panel()||mobility.ride()||mobility.detained()||indoor?.zone==='arena',
-  notice:social.notice,law:mobility.law,sound:playChime,refresh,canMove:combatCanMove,lineClear:combatLineClear,recoverFromFight,
+  blocked:()=>mobility.panel()||mobility.ride()||mobility.detained()||mobility.sporting()||indoor?.zone==='arena',
+  notice:social.notice,law:mobility.law,sound:playChime,refresh,canMove:combatCanMove,lineClear:combatLineClear,
+  damagePlayer:(amount,source)=>damagePlayer(amount,source),
   damageWorld:(from,to,amount,radius)=>world?.stream.strike(from,to,amount,radius)??null,
   props:()=>indoor?[]:world?.arch.props??[]});
 function combatActors(){
@@ -111,10 +113,28 @@ function combatLineClear(a,b){
   }
   return true;
 }
-function recoverFromFight(){
-  if(mobility.detained())return;
-  enterVenue(stopById('hospital'),'hospital');state.vitality=100;
-  social.notice('You woke up at Pacifica Medical. Your bounty is still on record.');
+function damagePlayer(amount,source='impact',instant=false){
+  if(state.phase==='dead'||state.vitality<=0)return;
+  state.vitality=instant?0:Math.max(0,state.vitality-Math.max(0,amount));
+  if(state.vitality<=0){playerDeath(source);return}
+  if(state.vitality<31)social.notice('Critical health · Get away from danger.');
+  refresh();
+}
+function playerDeath(source){
+  if(state.phase==='dead')return;
+  clearKeys();mobility.playerDeath();
+  state.cash=0;state.bounty=0;state.heat=0;state.speed=state.vx=state.vz=0;
+  state.phase='dead';state.vitality=0;deathTimer=2.8;stunTimer=0;
+  world?.airDefense?.clear();social.close(false);
+  $('death-details').textContent=`${source}. Wallet and bounty lost; bank savings are safe.`;
+  $('death-screen').hidden=false;document.body.classList.remove('playing','riding');
+  syncSelection();refresh();
+}
+function respawnAtGarage(){
+  deathTimer=0;state.vehicle='car';state.mode='roam';state.phase='running';state.vitality=100;
+  mobility.playerDeath();resetCar([11,-13,0]);lastMount=null;
+  $('death-screen').hidden=true;$('crash').hidden=true;
+  document.body.classList.add('playing');syncSelection();snap=true;refresh();
 }
 let atlas='';let mapOX=0,mapOZ=0, mapSX=.67,mapSZ=.328;
 const mapX=x=>77+(x-mapOX)*mapSX, mapY=z=>52.5+(z-mapOZ)*mapSZ;
@@ -329,6 +349,10 @@ function playChime(hz){
 }
 function refresh(){
   const {mode,phase,x,z,speed,heading,checkpoint,time,elapsed}=state;
+  const health=minmax(state.vitality??100,0,100),healthColor=`hsl(${health*1.2} 72% 48%)`;
+  $('player-health').setAttribute('aria-valuenow',String(Math.round(health)));
+  $('player-health-fill').style.width=`${health}%`;
+  $('player-health-fill').style.backgroundColor=healthColor;
   const [wx,wz]=worldPosition();
   const district=insidePlace?['INDOORS',insidePlace.name]:(rail()||mobility.ride()?.type==='rail')&&state.railY<-3?['COASTAL RAIL',railSector(x,state.railY)]:walking()&&x>16.5&&x<30.6?['OCEAN DISTRICT','Pacifica Beach']:districtAt(wx,wz);
   if($('location').lastChild.textContent!==` ${district[0]}`)$('location').lastChild.textContent=' '+district[0];
@@ -421,7 +445,7 @@ function enterVenue(stop,zone=venueFor(stop),gate=false,entry=null,heading=0){
   const same=indoor?.stop?.id===stop.id,anchor=same?groundPosition:[stop.x,stop.z+4.1];
   if(indoor){if(indoor.zone)indoor.dispose();else disposeInterior(indoor)}
   groundPosition=anchor;
-  indoor=makeTerminal(stop,zone,gate);
+  indoor=makeTerminal(stop,zone,gate,{security:zone==='bank'?Math.min(8,(state.bankRobberies[stop.id]??0)*2):0});
   insidePlace={id:stop.id,name:indoor.title,kind:'terminal'};
   state.interior={...insidePlace,zone};
   state.vehicle='walk';state.phase='running';state.mode='roam';state.speed=0;state.camera=0;state.swimming=false;state.jump=0;state.ability=0;state.depth=0;jumpVelocity=0;
@@ -537,6 +561,8 @@ function flightCrash(message,x,z,altitude,water){
   const energy=Math.hypot(state.speed,state.vertical*1.75);
   if(!water&&message==='Collision with a building')world.stream.damageAt(x,z,200+energy*5,2);
   world.wreck.impact({x,z,altitude,energy,water,heading:state.heading,vx:state.vx,vz:state.vz,vertical:state.vertical,pitch:state.pitch,bank:state.bank});
+  damagePlayer(100,message,true);
+  if(state.phase==='dead')return;
   world.airDefense?.clear();keys.clear();touchKeys.clear();state.phase='crashed';state.crash={message,x,z,water,aircraft:true,severity:energy>45?'severe':'moderate'};
   state.hijackedAirliner=false;
   mobility.resetCockpit();
@@ -561,6 +587,9 @@ function damageVehicle(impactSpeed,message){
   const maximum=vehicleMaxHealth(state.vehicle),relative=100/maximum;
   const damage=Math.min(maximum,Math.max(3,Math.pow(Math.max(0,impactSpeed-1),1.65)*.55*relative));
   state.vehicleHealth=Math.max(0,(state.vehicleHealth??maximum)-damage);
+  const protection=Math.min(1.45,maximum/110);
+  damagePlayer(Math.max(1,(impactSpeed-2.2)**1.24*.16/protection),message);
+  if(state.phase==='dead')return true;
   if(state.vehicleHealth<=0){vehicleCrash(message);return true}
   if(state.vehicleHealth<maximum*.28)social.notice('Critical vehicle damage · Handling and power reduced.');
   return false;
@@ -616,6 +645,7 @@ function updatePlane(dt){
   state.x=x;state.z=z;state.altitude=Math.max(0,y);state.airborne=y>.025||(air&&y>0);
 }
 function updateWalk(dt){
+  if(stunTimer>0){state.speed=0;return}
   const {x,z}=state;
   const wet=!indoor&&!solidLand(x,z)&&dockHeight(x,z)===null;
   if(state.jump>0||jumpVelocity>0){
@@ -638,6 +668,21 @@ function updateWalk(dt){
   if(!blocked(state.x,z+sz))state.z+=sz;
   state.swimming=!indoor&&!solidLand(state.x,state.z)&&dockHeight(state.x,state.z)===null;
   if(state.swimming){state.jump=0;jumpVelocity=0}
+}
+function updateCivilianReactions(dt){
+  if(indoor||!state.heat)return;
+  for(const npc of world.life.npcs){
+    if(npc.model.userData.inCombat)continue;
+    const dx=npc.x-state.x,dz=npc.z-state.z,d=Math.hypot(dx,dz);
+    if(d>9+state.heat*2)continue;
+    const roll=String(npc.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)%100;
+    if(roll>=state.heat*13)continue;
+    const pace=2.2+state.heat*.55,dist=Math.max(.1,d);
+    const x=npc.x+dx/dist*pace*dt,z=npc.z+dz/dist*pace*dt;
+    if(solidLand(x,z)&&!solidHit(x,z,.5,.28)){npc.x=x;npc.z=z;npc.model.position.set(x,.045,z)}
+    npc.model.rotation.y=Math.atan2(-dx,dz);
+    animatePerson(npc,simTime,pace);
+  }
 }
 function jump(){
   if(!walking()||state.swimming||state.phase!=='running'||state.dialogue||mobility.panel()||mobility.ride()||state.jump>0||jumpVelocity>0)return;
@@ -702,6 +747,13 @@ function update(dt){
   mobility.update(dt,simTime,world.arch);
   if(mobility.cutscene())return;
   combat.step(dt);
+  updateCivilianReactions(dt);
+  if(state.phase==='dead'){
+    deathTimer=Math.max(0,deathTimer-dt);
+    if(deathTimer===0)respawnAtGarage();
+    return;
+  }
+  stunTimer=Math.max(0,stunTimer-dt);
   if(state.messageTime>0)state.messageTime=Math.max(0,state.messageTime-dt);
   if(state.phase==='crashed'){state.altitude=Math.max(0,state.altitude-dt*(7+state.altitude*.58));return}
   if(state.phase!=='running'||mobility.ride()||mobility.panel())return;
@@ -1078,7 +1130,7 @@ addEventListener('keydown',e=>{
     case 'KeyF':fullscreen();break;case 'KeyM':toggleAudio();break;case 'KeyV':swapVehicle();break;
     case 'KeyE':interact();break;case 'KeyG':changeOnFoot();break;
     case 'KeyQ':if(world)mobility.gadget(world.arch);break;case 'KeyH':special();break;
-    case 'KeyX':combat.attack();break;case 'KeyB':combat.cycle();break;
+    case 'KeyX':if(!mobility.sporting())combat.attack();break;case 'KeyB':combat.cycle();break;
     case 'Escape':if(document.body.classList.contains('expanded'))fullscreen();break;
   }
 });

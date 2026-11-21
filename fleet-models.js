@@ -42,15 +42,23 @@ export function makeExtraModels(w){
   }
   const fleetModels={};
   for(const [id,p] of Object.entries(fleetProducts)){
-    const model=p.family==='bus'||p.family==='taxi'?makeRoadServiceVehicle(p):
-      p.family==='ferry'?makeFerryVariant(p.variant):
-      p.kind==='air'?makeAircraftVariant(p):
-      (p.kind==='boat'?w.life.craft[p.chassis]:p.kind==='rail'?w.arch.train.front:w.aircraft.mesh).clone(true);
+    const model=makeFleetModel(p,w);
     addVariantKit(model,p);
+    vehiclePaint(model,p.color);
     const back=p.kind==='rail'?w.arch.train.back.clone(true):null;
-    model.visible=false;if(back)back.visible=false;
+    model.visible=false;if(back){vehiclePaint(back,p.color);back.visible=false}
     w.scene.add(model);if(back)w.scene.add(back);
     fleetModels[id]={model,back,kind:p.kind,propellers:model.userData.propellers??[]};
+  }
+  function makeFleetModel(p,world){
+    if(p.family==='bus'||p.family==='taxi')return makeRoadServiceVehicle(p);
+    if(p.family==='ferry')return makeFerryVariant(p.variant);
+    if(p.kind==='air')return makeAircraftVariant(p);
+    const base=p.kind==='road'?world.cars[p.chassis]?.car:
+      p.kind==='boat'?world.life.craft[p.chassis]:
+      p.kind==='rail'?world.arch.train.front:null;
+    if(!base)throw new Error(`Missing ${p.kind} chassis model "${p.chassis}" for vehicle "${p.model}".`);
+    return base.clone(true);
   }
   function makeAircraftVariant(p){
     const g=new T.Group(),propellers=[];
@@ -201,6 +209,19 @@ function addVariantKit(g,p){
   const color=p.color,boxKit=(x,y,z,w,h,d)=>box(g,color,x,y,z,w,h,d);
   if(p.family==='bus'||p.family==='taxi'||p.kind==='air')return;
   if(p.kind==='road'){
+    if(p.chassis==='bike'){
+      if(p.variant===0){
+        boxKit(0,1.14,-1.03,.47,.48,.20);boxKit(0,.84,1.08,.42,.34,.44);
+        boxKit(-.47,1.33,-.74,.34,.11,.11);boxKit(.47,1.33,-.74,.34,.11,.11);
+      }else if(p.variant===1){
+        boxKit(0,1.22,-1.05,.44,.17,.42);boxKit(0,.55,-1.07,.58,.13,.24);
+        boxKit(0,.93,.92,.72,.44,.34);boxKit(0,1.32,.30,.42,.12,.43);
+      }else{
+        boxKit(0,1.22,.84,.83,.50,.55);boxKit(0,1.48,.78,.62,.12,.40);
+        boxKit(-.44,1.10,-.68,.20,.27,.39);boxKit(.44,1.10,-.68,.20,.27,.39);
+      }
+      return;
+    }
     if(p.variant===0){
       boxKit(-.72,1.18,1.72,.16,.12,.38);boxKit(.72,1.18,1.72,.16,.12,.38);
       boxKit(0,1.30,1.80,1.72,.12,.14);

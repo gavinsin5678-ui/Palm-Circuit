@@ -400,8 +400,8 @@ function refresh(){
   interactable=world&&(walking()||motoring()&&Math.abs(speed)<.8)&&state.phase==='running'&&!state.dialogue&&!mobility.panel()&&!mobility.ride()?findAction():null;
   $('interact').hidden=!interactable;
   if(interactable&&$('interact-label').textContent!==interactable.label)$('interact-label').textContent=interactable.label;
-  $('ability-tool').hidden=!prototypeIds.includes(state.vehicle)||state.phase!=='running';
-  $('ability-tool').title=variant(state.vehicle)?.info??'Activate vehicle ability (H)';
+  $('ability-tool').hidden=!(prototypeIds.includes(state.vehicle)||walking())||state.phase!=='running';
+  $('ability-tool').title=walking()?`${combat.abilityInfo().name} · ${combat.abilityInfo().info} Press H.`:variant(state.vehicle)?.info??'Activate vehicle ability (H)';
   $('gadget-tool').hidden=!walking()||state.phase!=='running'||!!state.dialogue||!!mobility.panel()||(indoor?.zone!=='arena'&&(!state.gadget||!!indoor));
   $('jump-tool').hidden=!walking()||state.phase!=='running'||state.swimming;
   mobility.refresh();
@@ -688,11 +688,24 @@ function jump(){
   if(!walking()||state.swimming||state.phase!=='running'||state.dialogue||mobility.panel()||mobility.ride()||state.jump>0||jumpVelocity>0)return;
   jumpVelocity=5.5;playChime(290);
 }
+const vehicleAbilityDuration={
+  launch:5,grip:8,slip:6,cornering:7,'race-drift':7,'passing-burst':4,
+  buffer:8,anchor:6,'terrain-lock':8,soar:8,afterburn:4,stabilize:9,
+  skim:7,rudder:7,hold:6,steady:9,'dock-rudder':7,'current-anchor':6,
+  'rail-sprint':4,regen:6,shunt:8,bank:7,'scrambler-grip':8,'corner-launch':4,
+  'impact-cushion':8,'sand-skim':8,'rescue-brake':6,dive:8,scan:5,deep:12,
+  floats:20,glide:8,short:8,station:5,'metro-regen':6,climb:8,
+  'bus-airbrake':5,'bus-turbo':4,'bus-allterrain':8,'taxi-drift':7,
+  'taxi-sprint':4,'taxi-evasion':6,ferryfoil:7,'ferry-turn':7,'ferry-stabilize':9
+};
 function special(){
+  if(walking()){combat.special();return}
   if(!prototypeIds.includes(state.vehicle)||state.phase!=='running'||mobility.ride()||mobility.panel())return;
   if(state.abilityCool>0){social.notice('Prototype is still recharging.');return}
   const p=variant(state.vehicle),special=p?.ability;
-  state.ability=p?({floats:24,deep:14,dive:9,glide:9,steady:10,hold:7,short:12,'ferryfoil':7,'ferry-stabilize':8,'current-anchor':7,'bus-turbo':5.5,'taxi-sprint':5.5}[special]??5.2):state.vehicle==='jet'?2.6:state.vehicle==='gravity'?4.8:5.7;
+  const duration=special?vehicleAbilityDuration[special]:state.vehicle==='jet'?2.6:state.vehicle==='gravity'?4.8:state.vehicle==='hydro'?5.7:0;
+  if(!duration)throw new Error(`No H-key ability is configured for vehicle "${state.vehicle}" (${special??'base vehicle'}).`);
+  state.ability=duration;
   state.abilityCool=state.ability+6;
   if(special==='scan'||special==='station'){
     const type=special==='scan'?'ferry':'rail';

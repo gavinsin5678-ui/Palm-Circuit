@@ -64,7 +64,7 @@ export function person(shirt='#5cbbad',skin='#bc8460',hero=false){
     const foot=new T.Mesh(geom,material('#e1ccad'));foot.position.set(0,-.32,-.065);foot.scale.set(.13,.09,.23);lowerLeg.add(foot);
     limbs.push({side,arm,lowerArm,leg,lowerLeg});
   }
-  return {model,limbs};
+  return {model,limbs,attackedPlayerFirst:false};
 }
 export function ragdollPerson(p,impulse={x:0,z:0},duration=1.5,now=0){
   p.ragdoll={start:now,until:now+duration,x:impulse.x??0,z:impulse.z??0};

@@ -1100,7 +1100,7 @@ function draw(dt,now){
   world.extras.shoal.visible=underwater;
   world.scene.background=underwater?world.waterBackground:null;
   world.scene.fog.color.set(underwater?'#348295':'#ae8991');
-  world.scene.fog.density=underwater?.019:.0043;
+  world.scene.fog.density=underwater?.019:.0031;
   if(indoor?.exitDoor)indoor.exitDoor.visible=camera.position.z<indoor.d+.03;
   indoor?.frame?.(camera.position.x,camera.position.z);
   world.sky.position.copy(camera.position);

@@ -142,16 +142,18 @@ export function createCombat(api){
       p.ragdoll=r.ragdoll;
     }
     if(r.hp===0)exposures.delete(p.id);
+    if(p.attackedPlayerFirst)return 0;
     const ward=p.ward?45:0;
     if(!r.hp)return (cause==='vehicle'?340:270)+ward;
     return (cause==='vehicle'?(amount>=55?105:48):amount>=55?80:was<100?42:32)+(ward?20:0);
   }
   function consequence(hits,cause){
-    if(!hits.length)return;
-    const dead=hits.filter(h=>vital(h.p)===0).length,total=hits.reduce((n,h)=>n+h.fine,0);
+    const crimes=hits.filter(h=>h.fine>0);
+    if(!crimes.length)return;
+    const dead=crimes.filter(h=>vital(h.p)===0).length,total=crimes.reduce((n,h)=>n+h.fine,0);
     const text=cause==='vehicle'?(dead?'Fatal pedestrian collision':'Pedestrian collision'):
-      dead?'Fatal attack':hits.length>1?'Multiple people injured':'Person injured';
-    const subject=hits.length===1?hits[0].p.name:`${hits.length} people`;
+      dead?'Fatal attack':crimes.length>1?'Multiple people injured':'Person injured';
+    const subject=crimes.length===1?crimes[0].p.name:`${crimes.length} people`;
     api.law(total,`${text} · ${subject}`);
   }
   function fx(style,start,end,color){
@@ -198,7 +200,7 @@ export function createCombat(api){
       target=aliveActors().map(p=>({p,at:point(p)})).filter(o=>Math.hypot(o.at.x-end.x,o.at.z-end.z)<(gear.radius??3.1)&&visible(end,o.at));
     }else target=list.slice(0,gear.targetCount??(gear.style==='fan'||gear.style==='ring'?4:gear.style==='pierce'?2:1));
     const cause=gear.style==='bloom'?'explosion':'weapon';
-    const hits=target.map((o,i)=>({p:o.p,fine:damage(o.p,gear.style==='chain'&&i?Math.ceil(gear.damage*.55):gear.damage,cause,o.at)})).filter(o=>o.fine);
+    const hits=target.map((o,i)=>({p:o.p,fine:damage(o.p,gear.style==='chain'&&i?Math.ceil(gear.damage*.55):gear.damage,cause,o.at)}));
     let crates=0;
     for(const prop of api.props()){
       const dx=prop.x-from.x,dz=prop.z-from.z,d=Math.hypot(dx,dz);
@@ -282,7 +284,7 @@ export function createCombat(api){
           if(api.canMove(dest.x,dest.z)){r.x=dest.x;r.z=dest.z}
         }
         if(d<1.65&&eligible()&&time>(r.counter??0)){
-          r.counter=time+.95;api.damagePlayer?.(9+state.heat*1.5,`Punch from ${p.name}`);api.sound(102);
+          r.counter=time+.95;p.attackedPlayerFirst=true;api.damagePlayer?.(9+state.heat*1.5,`Punch from ${p.name}`);api.sound(102);
         }
         animatePerson(p,time,pace);
         model.position.x+=r.x-here.x;model.position.z+=r.z-here.z;
@@ -297,7 +299,7 @@ export function createCombat(api){
           if(api.canMove(dest.x,dest.z)){r.x=dest.x;r.z=dest.z}
         }
         if(p.rival&&d<1.65&&eligible()&&time>(r.counter??0)){
-          r.counter=time+.85;api.damagePlayer?.(17,`Punch from ${p.name}`);api.sound(102);
+          r.counter=time+.85;p.attackedPlayerFirst=true;api.damagePlayer?.(17,`Punch from ${p.name}`);api.sound(102);
         }
         animatePerson(p,time,pace);
       }else animatePerson(p,time,0);

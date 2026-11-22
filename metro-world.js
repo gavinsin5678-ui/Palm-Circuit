@@ -1,5 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {person} from './life-world.js?v=articulated-physics';
+import {createTerrainPatch} from './world.js?v=surface-detail';
 
 export const islands=[
   {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',z:96,ground:'#c89959',rim:'#e9c084',road:'#675652',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},
@@ -106,6 +107,61 @@ export const railStop=(s,line='surface')=>nearestRail(s.x,s.z,line==='below',lin
 const boxGeo=new T.BoxGeometry(), tubeGeo=new T.CylinderGeometry(.5,.5,1,8);
 const matCache=new Map();
 function mat(c,lit=false){const id=c+lit;if(!matCache.has(id))matCache.set(id,lit?new T.MeshBasicMaterial({color:c}):new T.MeshLambertMaterial({color:c}));return matCache.get(id)}
+let sandstoneTexture;
+const sandstoneMaterials=new Map();
+function sandstone(c){
+  if(!sandstoneTexture){
+    const cvs=document.createElement('canvas');cvs.width=cvs.height=128;
+    const ctx=cvs.getContext('2d');ctx.fillStyle='#858078';ctx.fillRect(0,0,128,128);
+    for(let i=0;i<1900;i++){
+      const shade=70+Math.floor(Math.random()*95),x=Math.random()*128,y=Math.random()*128;
+      ctx.fillStyle=`rgba(${shade},${shade},${shade-8},${Math.random()*.32})`;
+      ctx.fillRect(x,y,1+Math.random()*5,1+Math.random()*2);
+    }
+    sandstoneTexture=new T.CanvasTexture(cvs);sandstoneTexture.wrapS=sandstoneTexture.wrapT=T.RepeatWrapping;
+    sandstoneTexture.repeat.set(2,2);
+  }
+  if(!sandstoneMaterials.has(c))sandstoneMaterials.set(c,new T.MeshStandardMaterial({
+    color:c,roughness:.96,bumpMap:sandstoneTexture,bumpScale:.075
+  }));
+  return sandstoneMaterials.get(c);
+}
+function stoneBlock(g,x,y,z,w,h,d,c){
+  const m=new T.Mesh(boxGeo,sandstone(c));m.position.set(x,y,z);m.scale.set(w,h,d);g.add(m);return m;
+}
+function steppedPyramid(g,x,z,size,courses){
+  const height=.62,colors=['#cfb78e','#bfa67d','#dbc69c','#b9a17b'];
+  const core=new T.Mesh(new T.ConeGeometry(size*.72,courses*height,4),sandstone('#bba47d'));
+  core.position.set(x,courses*height*.48,z);core.rotation.y=Math.PI/4;g.add(core);
+  for(let row=0;row<courses;row++){
+    const span=size*(1-row/courses),y=row*height+height*.5,color=colors[row%colors.length];
+    const count=Math.max(2,Math.ceil(span/1.35)),blockWidth=span/count;
+    for(let i=0;i<count;i++){
+      const offset=(i+.5)*blockWidth-span*.5;
+      for(const side of [-1,1]){
+        stoneBlock(g,x+offset,y,z+side*span*.5,blockWidth-.055,height-.035,.27,color);
+        stoneBlock(g,x+side*span*.5,y,z+offset,.27,height-.035,blockWidth-.055,color);
+      }
+    }
+  }
+}
+function craggyPeak(g,x,z,radius,height,seed){
+  const sides=9,rings=5,vertices=[],colors=[],indices=[],rock=new T.Color('#687680'),snow=new T.Color('#e6eeea'),color=new T.Color();
+  for(let ring=0;ring<=rings;ring++)for(let side=0;side<sides;side++){
+    const angle=side/sides*Math.PI*2+seed*.17,rough=1+.13*Math.sin(side*7.1+seed*3.3)+.08*Math.cos(side*3.7);
+    const t=ring/rings,rad=radius*(.12+t*.88)*rough;
+    const y=height*(1-t)*(1-t*.58)*(1+.12*Math.sin(side*4.9+seed));
+    vertices.push(x+Math.cos(angle)*rad,y,z+Math.sin(angle)*rad);
+    const snowLine=.58-.14*Math.max(0,Math.sin(angle*3+seed));
+    color.copy(rock).lerp(snow,Math.max(0,Math.min(1,(y/height-snowLine)*8)));
+    if(y/height>.9)color.copy(snow);
+    colors.push(color.r,color.g,color.b);
+    if(ring<rings){const a=ring*sides+side,b=ring*sides+(side+1)%sides,c=a+sides,d=b+sides;indices.push(a,b,c,b,d,c)}
+  }
+  const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(vertices,3));
+  geometry.setAttribute('color',new T.Float32BufferAttribute(colors,3));geometry.setIndex(indices);geometry.computeVertexNormals();
+  g.add(new T.Mesh(geometry,new T.MeshStandardMaterial({vertexColors:true,roughness:.91,side:T.DoubleSide})));
+}
 function box(g,x,y,z,w,h,d,c,lit=false){
   const m=new T.Mesh(boxGeo,mat(c,lit));m.position.set(x,y,z);m.scale.set(w,h,d);g.add(m);return m;
 }
@@ -161,9 +217,8 @@ function makeInfrastructure(g,solids){
   }
   for(const s of [-1,1])box(g,150,10.35,96+s*7.8,3.4,.4,1.7,'#83ccb4',true);
   for(const i of islands){
-    const z=i.z;
-    box(g,312.5,-.38,z,151,.73,140,i.rim);
-    box(g,314,-.14,z,139,.30,130,i.ground);
+    const z=i.z,terrainType=i.id==='snow'?'alpine':i.id;
+    createTerrainPatch(g,312.5,z,151,140,26,24,`island-${terrainType}`,-.16,312.5,z);
     box(g,312,.03,z,145,.05,17,i.road);
     box(g,313,.03,z,17,.05,139,i.road);
     box(g,345,.03,z+40,73,.05,10,i.road);
@@ -202,11 +257,12 @@ function makeInfrastructure(g,solids){
       }
     }
     if(i.id==='snow')for(const [x,dz,r,h] of [[255,-43,14,28],[265,-54,11,38],[279,-56,12,31],[287,-50,9,22]]){
-      const peak=(radius,height,y,color)=>{
-        const m=new T.Mesh(new T.ConeGeometry(radius,height,5),mat(color));m.position.set(x,y,z+dz);m.rotation.y=.48+x;g.add(m);
-      };
-      peak(r,h,h*.5-.17,'#819bb6');peak(r*.58,h*.59,h*.7,'#f1fbf7');
+      craggyPeak(g,x,z+dz,r,h,x+dz);
       solids.push({x,z:z+dz,w:r*.57,d:r*.57,h:h*.42});
+    }
+    if(i.id==='dune'){
+      steppedPyramid(g,260,z+11,16,10);
+      steppedPyramid(g,284,z+27,10,7);
     }
     if(i.id==='future'){
       box(g,344,13,z-.2,3.6,2.6,48,'#506080');

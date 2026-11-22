@@ -132,7 +132,7 @@ export function railAt(distance,line='surface'){
 export function nearestRail(x,z,includeBelow=false,line='surface'){
   const {segments}=routes[line==='below'?'below':'surface'];
   let best;
-  for(const {a,b,len,start} of segments){
+  for(const {a,b,len} of segments){
     let t=Math.max(0,Math.min(1,((x-a[0])*(b[0]-a[0])+(z-a[1])*(b[1]-a[1]))/(Math.pow(b[0]-a[0],2)+Math.pow(b[1]-a[1],2))));
     if(line==='surface'&&!includeBelow&&a[2]<-2&&b[2]<-2)continue;
     const p=railAt(start+len*t,line);
@@ -228,7 +228,7 @@ function sign(g,x,y,z,name,color='#92f2d2',rot=0){
 function batch(group){
   group.updateMatrixWorld(true);
   const batches=new Map();
-  for(const m of [...group.children])if(m.isMesh&&(m.geometry===boxGeo||m.geometry===tubeGeo)){
+  for(const m of [...group.children])if(m.isMesh&&!m.isInstancedMesh&&(m.geometry===boxGeo||m.geometry===tubeGeo)){
     const k=`${m.geometry.id}/${m.material.id}`;
     if(!batches.has(k))batches.set(k,[]);
     batches.get(k).push(m);
@@ -547,26 +547,75 @@ function makeRailInfrastructure(g){
         buffer.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),axis);
         g.add(buffer);
       }
-    }
-    for(const {a,b,len,start} of segments){
-      const dx=b[0]-a[0],dz=b[1]-a[1],xz=Math.hypot(dx,dz),nx=-dz/xz,nz=dx/xz,angle=Math.atan2(dx,dz);
-      const P=(t,s=0,y=0)=>[a[0]+dx*t+nx*s,a[2]+(b[2]-a[2])*t+y,a[1]+dz*t+nz*s];
-      for(const s of [-1,1])rod(g,P(0,s*.9,.09),P(1,s*.9,.09),.15,'#a9b2b3');
-      for(let l=0;l<len;l+=2.45){
-        const [x,y,z]=P(l/len);box(g,x,y-.12,z,3.5,.17,.26,'#716153').rotation.y=angle;
-      }
-      if(line==='below'){
+      for(const {a,b,len,start} of segments){
+        const dx=b[0]-a[0],dz=b[1]-a[1],xz=Math.hypot(dx,dz),nx=-dz/xz,nz=dx/xz,angle=Math.atan2(dx,dz);
+        const P=(t,s=0,y=0)=>[a[0]+dx*t+nx*s,a[2]+(b[2]-a[2])*t+y,a[1]+dz*t+nz*s];
+        for(const s of [-1,1])rod(g,P(0,s*.9,.09),P(1,s*.9,.09),.15,'#a9b2b3');
+        for(let l=0;l<len;l+=2.45){
+          const [x,y,z]=P(l/len);box(g,x,y-.12,z,3.5,.17,.26,'#716153').rotation.y=angle;
+        }
         for(let l=3;l<len-1;l+=7)for(const s of [-1,1]){
           const [x,y,z]=P(l/len,s*3.84,0);
           box(g,x,y,z,.22,1.35,.18,'#718891').rotation.y=angle;
         }
-      }else if(start%36<4&&
-        ((a[0]>30&&a[0]<237)||(Math.abs(a[0]-302)<3))){
-        for(const s of [-1,1]){
-          const [x,y,z]=P(.5,s*2.7,-6);
-          box(g,x,y,z,1.1,12,1.1,'#7f8e91');
-        }
       }
+      continue;
+    }
+    const concrete=new T.MeshStandardMaterial({color:'#858d8d',roughness:.94,metalness:.02,side:T.FrontSide,transparent:false,opacity:1}),
+      ballast=new T.MeshStandardMaterial({color:'#3e4142',roughness:.98,metalness:0,side:T.FrontSide,transparent:false,opacity:1}),
+      steel=new T.MeshStandardMaterial({color:'#889296',roughness:.34,metalness:.78,side:T.FrontSide,transparent:false,opacity:1}),
+      deck=new T.InstancedMesh(new T.BoxGeometry(5.4,1.1,1),concrete,segments.length),
+      parapets=[-1,1].map(()=>new T.InstancedMesh(new T.BoxGeometry(.42,.72,1),concrete,segments.length)),
+      ballastBed=new T.InstancedMesh(new T.BoxGeometry(4.2,.16,1),ballast,segments.length),
+      upAxis=new T.Vector3(0,1,0),forward=new T.Vector3(),right=new T.Vector3(),up=new T.Vector3(),
+      midpoint=new T.Vector3(),instancePosition=new T.Vector3(),orientation=new T.Quaternion(),scale=new T.Vector3(),
+      matrix=new T.Matrix4(),railPoints=[[],[]],trackSamples=[segments[0].a,...segments.map(segment=>segment.b)];
+    deck.name='Surface rail solid concrete box-girder deck';
+    deck.userData.railInfrastructure={type:'surface-deck',width:5.4,thickness:1.1,segments:segments.length};
+    ballastBed.name='Surface rail crushed-stone ballast bed';
+    ballastBed.userData.railInfrastructure={type:'surface-ballast',segments:segments.length};
+    parapets.forEach((mesh,index)=>{
+      mesh.name=`Surface rail concrete parapet ${index+1}`;
+      mesh.userData.railInfrastructure={type:'surface-parapet',height:.72,segments:segments.length};
+    });
+    for(let i=0;i<segments.length;i++){
+      const {a,b,len}=segments[i];
+      midpoint.set((a[0]+b[0])*.5,(a[2]+b[2])*.5,(a[1]+b[1])*.5);
+      forward.set(b[0]-a[0],b[2]-a[2],b[1]-a[1]).normalize();
+      right.crossVectors(upAxis,forward).normalize();
+      up.crossVectors(forward,right).normalize();
+      orientation.setFromRotationMatrix(matrix.makeBasis(right,up,forward));
+      scale.set(1,1,len+.12);
+      instancePosition.copy(midpoint).addScaledVector(up,-.57);
+      matrix.compose(instancePosition,orientation,scale);
+      deck.setMatrixAt(i,matrix);
+      instancePosition.copy(midpoint).addScaledVector(up,.02+.36);
+      for(let side=0;side<2;side++){
+        instancePosition.addScaledVector(right,side===0?-2.4:4.8);
+        matrix.compose(instancePosition,orientation,scale);
+        parapets[side].setMatrixAt(i,matrix);
+      }
+      instancePosition.copy(midpoint).addScaledVector(up,.02);
+      matrix.compose(instancePosition,orientation,scale);
+      ballastBed.setMatrixAt(i,matrix);
+    }
+    for(let i=0;i<trackSamples.length;i++){
+      const point=trackSamples[i],before=trackSamples[Math.max(0,i-1)],after=trackSamples[Math.min(trackSamples.length-1,i+1)];
+      forward.set(after[0]-before[0],after[2]-before[2],after[1]-before[1]).normalize();
+      right.crossVectors(upAxis,forward).normalize();up.crossVectors(forward,right).normalize();
+      midpoint.set(point[0],point[2],point[1]);
+      railPoints[0].push(midpoint.clone().addScaledVector(right,-.9).addScaledVector(up,.09));
+      railPoints[1].push(midpoint.clone().addScaledVector(right,.9).addScaledVector(up,.09));
+    }
+    for(const mesh of [deck,...parapets,ballastBed]){
+      mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();g.add(mesh);
+    }
+    for(const [index,points] of railPoints.entries()){
+      const railCurve=new T.CatmullRomCurve3(points,false,'centripetal',.5),
+        railMesh=new T.Mesh(new T.TubeGeometry(railCurve,Math.max(100,segments.length*2),.08,8,false),steel);
+      railMesh.name=`Surface rail steel rail ${index+1}`;
+      railMesh.userData.railInfrastructure={type:'surface-rail',segments:segments.length};
+      g.add(railMesh);
     }
   }
 }
@@ -597,15 +646,14 @@ function makeStops(g){
     const w=type==='rail'?15:type==='bank'?12:9,d=type==='rail'?9:type==='bank'?7:4.5;
     box(g,x,.027,z,w,.12,d,'#879596');
     box(g,x,3.04,z,w+.5,.29,d+.55,c);
-    for(const a of [-1,1])for(const b of [-1,1])box(g,x+a*(w*.45),1.46,z+b*(d*.42),.24,2.9,.23,'#566c73');
+    if(type!=='rail')for(const a of [-1,1])for(const b of [-1,1])
+      box(g,x+a*(w*.45),1.46,z+b*(d*.42),.24,2.9,.23,'#566c73');
     box(g,x,1.25,z-d*.5,w-.48,2.47,.21,'#314c58');
     for(const side of [-1,1]){
       box(g,x+side*w*.28,.46,z-d*.28,w*.27,.31,.61,'#bca583');
       box(g,x+side*(w*.5-.4),1.1,z+.9,.48,.41,.38,c,true);
     }
     if(type==='rail'){
-      box(g,x,10.95,z,w,.3,d,'#89969a');
-      for(const side of [-1,1])box(g,x+side*(w*.43),6.1,z,.55,12.1,.55,'#65757a');
       box(g,x,.065,z,4.2,.13,4.2,'#607c7b');
       box(g,x,.016,z+3.7,w,.11,4.8,'#a5a99c');
       box(g,x,3.22,z,8,.10,4.7,'#3b5360');

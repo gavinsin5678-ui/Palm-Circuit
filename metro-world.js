@@ -320,7 +320,7 @@ function makeInfrastructure(g,solids,asphaltMaterial){
         building=new T.Mesh(boxGeo,facade);
       building.position.set(x,height*.5,zz);building.scale.set(width,height,depth);city.add(building);
       roadBox(city,x,height+.28,zz,width+.42,.56,depth+.42,mat(i.id==='snow'?'#e9f5f8':i.accent));
-      for(const floor=2.2;floor<height-1;floor+=3.1){
+      for(let floor=2.2;floor<height-1;floor+=3.1){
         for(const side of [-1,1]){
           roadBox(city,x+side*(width*.5+.025),floor,zz, .05,1.25,depth*.72,mat('#9bcbd0',true));
           roadBox(city,x,floor,zz+side*(depth*.5+.025),width*.72,1.25,.05,mat('#9bcbd0',true));

@@ -4,7 +4,7 @@ import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,ragdollPerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=articulated-physics';
 import {createSocial} from './social.js?v=connections';
 import {createMobility} from './mobility.js?v=gameplay-overhaul';
-import {makeArchipelago,regions,islandAt,islandSurfaceY,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
+import {makeArchipelago,regions,islandAt,islandSurfaceY,islandRoadY,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
 import {makeTerminal,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
 import {fleetProducts,vehicleDynamics} from './fleet.js?v=road-dynamics';
@@ -76,12 +76,11 @@ const motoring=()=>!walking()&&!flying()&&!boating()&&!rail();
 const drivable=(x,z)=>x<=15.5||!!islandAt(x,z)||highwayAt(x,z);
 const roadSurface=(x,z)=>x<=15.5&&(onStreet(x,z)||atAirfield(x,z))||isRoad(x,z);
 const surfaceY=(x,z)=>{
-  const tunnel=world?.arch.roadHeightAt(x,z);
-  if(tunnel!==undefined)return tunnel+.08;
+  const roadHeight=world?.arch.roadHeightAt(x,z);
+  if(roadHeight!==undefined)return roadHeight;
   const island=islandAt(x,z);
   if(!island)return 0;
-  if(Math.abs(x-island.centerX-56)<9)return 2.15;
-  return isRoad(x,z)?2.07:islandSurfaceY(x,z);
+  return islandRoadY(x,z)??islandSurfaceY(x,z);
 };
 const solidHit=(x,z,y,r)=>world?.stream.hit(x,z,y,r)||world?.arch.hit(x,z,y,r);
 const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);if(x>219)properties.push(...world.arch.properties);return {properties,people}};
@@ -437,9 +436,11 @@ function initTraffic(dt){
     if(t.coord>max)t.coord=min;
     if(t.coord<min)t.coord=max;
     if(t.axis==='z'){
-      t.mesh.position.set(t.lane-t.dir*3.65,.025,t.coord);t.mesh.rotation.y=t.dir===1?Math.PI:0;
+      const x=t.lane-t.dir*3.65;
+      t.mesh.position.set(x,surfaceY(x,t.coord)+.025,t.coord);t.mesh.rotation.y=t.dir===1?Math.PI:0;
     }else{
-      t.mesh.position.set(t.coord,.025,t.lane+t.dir*3.3);t.mesh.rotation.y=-t.dir*Math.PI/2;
+      const z=t.lane+t.dir*3.3;
+      t.mesh.position.set(t.coord,surfaceY(t.coord,z)+.025,z);t.mesh.rotation.y=-t.dir*Math.PI/2;
     }
   }
 }

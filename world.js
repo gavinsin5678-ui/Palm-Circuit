@@ -193,8 +193,11 @@ function terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z,fla
     if(mode.startsWith('island-')){
       const fade=Math.max(0,Math.min(1,(gx-(offsetX-w/2))/20,(offsetX+w/2-gx)/20,
         (gz-(offsetZ-d/2))/20,(offsetZ+d/2-gz)/20));
-      const urban= Math.abs(gx-offsetX)<=84&&Math.abs(gz-offsetZ)<=76;
-      height=urban?1.9:1.9*fade+Math.max(0,height)*fade-1.9;
+      const urban=Math.abs(gx-offsetX)<=90&&Math.abs(gz-offsetZ)<=82;
+      const centralIsland=Math.abs(offsetX-313)<1,
+        bridgeApproach=centralIsland&&Math.abs(gx-offsetX)<=9&&Math.abs(gz-offsetZ)>=72&&Math.abs(gz-offsetZ)<=94,
+        westBridgeApproach=centralIsland&&Math.abs(gz-offsetZ)<=9&&gx>=offsetX-100&&gx<=offsetX-78;
+      height=urban||bridgeApproach||westBridgeApproach?1.9:1.9*fade+Math.max(0,height)*fade-1.9;
     }
     if(mode==='city'&&onStreet(gx,gz))height=0;
     points.push({px,pz,gx,gz,height,airportGround});

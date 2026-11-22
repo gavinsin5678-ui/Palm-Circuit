@@ -1,4 +1,4 @@
-import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt,runways,islandSurfaceY,roadHeightAt} from './metro-world.js?v=gameplay-overhaul';
+import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt,runways,islandSurfaceY,islandRoadY,roadHeightAt} from './metro-world.js?v=gameplay-overhaul';
 import {createSportsMatch,sportModes} from './sports.js?v=gameplay-overhaul';
 import {animatePerson} from './life-world.js?v=articulated-physics';
 import {hasVenue,venueFor} from './terminal-world.js?v=gameplay-overhaul';
@@ -56,13 +56,24 @@ function path(pts){
   };
 }
 function roadPath(s,d,scenic){
-  const roadway=points=>points.map(([x,z])=>{
-    const tunnel=roadHeightAt(x,z);
-    if(tunnel!==undefined)return [x,z,tunnel+.08];
-    const region=regions.find(item=>item.id!=='main'&&Math.abs(x-item.centerX)<=100&&Math.abs(z-item.z)<=92);
-    if(!region)return [x,z,.12];
-    return [x,z,(Math.abs(x-region.centerX-56)<9?2.15:islandSurfaceY(x,z))+.17];
-  });
+  const roadway=points=>{
+    const surface=(x,z)=>{
+      const roadHeight=roadHeightAt(x,z);
+      if(roadHeight!==undefined)return [x,z,roadHeight];
+      const region=regions.find(item=>item.id!=='main'&&Math.abs(x-item.centerX)<=100&&Math.abs(z-item.z)<=94);
+      if(!region)return [x,z,.12];
+      return [x,z,islandRoadY(x,z)??islandSurfaceY(x,z)+.17];
+    };
+    const detailed=[surface(points[0][0],points[0][1])];
+    for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i],steps=Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/8);
+      for(let step=1;step<=steps;step++){
+        const t=step/steps;
+        detailed.push(surface(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t));
+      }
+    }
+    return detailed;
+  };
   const [sa,da]=[s,d].map(q=>q.region==='main'?[clamp(Math.round(q.x/48)*48+3.5,-191,3.5),Math.round(q.z/48)*48+3.5]:
     [byRegion(q.region).centerX+3.5,byRegion(q.region).z+3.5]);
   const [sx,sz]=sa,[dx,dz]=da;

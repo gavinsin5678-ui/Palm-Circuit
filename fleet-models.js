@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.min.js';
-import {nearestRail} from './metro-world.js?v=walkable-transit-v2';
+import {nearestRail} from './metro-world.js?v=gameplay-overhaul';
 import {fleetProducts} from './fleet.js?v=road-dynamics';
 
 const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,12,8), tire=new T.CylinderGeometry(.43,.43,.22,14);
@@ -66,6 +66,23 @@ export function makeExtraModels(w){
     return base.clone(true);
   }
   function makeAircraftVariant(p){
+    if(p.model==='fighter'){
+      const g=new T.Group();
+      box(g,p.color,0,.72,0,1.22,.58,7.6);
+      shape(g,round,'#d6e5df',0,1.30,-.35,.62,.42,2.05);
+      box(g,'#263e50',0,1.35,-.82,.82,.35,1.48);
+      box(g,p.color,0,.72,.95,8.25,.16,3.65);
+      box(g,p.color,0,.75,-1.25,6.85,.13,2.15);
+      for(const x of [-1,1]){
+        box(g,p.color,x*1.48,.78,-.45,1.42,.24,4.25).rotation.y=-x*.12;
+        box(g,p.color,x*1.22,1.55,-2.15,.16,1.52,.82).rotation.z=x*.28;
+        box(g,p.color,x*.62,.63,-3.58,.38,.38,.72);
+        box(g,'#ff9a48',x*.62,.63,-4.02,.48,.48,.20).name='afterburner';
+      }
+      box(g,p.color,0,1.02,-3.15,.44,.42,1.05);
+      g.userData.propellers=[];
+      return g;
+    }
     const g=new T.Group(),propellers=[];
     const fuselage=p.family==='plane'?[9.6,15.2,12.4][p.variant]:[10.1,11.8,10.8][p.variant];
     const span=p.family==='plane'?[21.5,14.4,17.4][p.variant]:[14.6,16.8,15.5][p.variant];
@@ -136,44 +153,10 @@ function makeRoadServiceVehicle(p){
   const body=isBus?'#8dc69e':'#e7c56e',glass='#b8e4d7',length=isBus?[7.2,8.5,7.7][variant]:[4.3,4.7,5.1][variant];
   if(isBus){
     const height=variant===1?2.45:2.08;
-    box(g,body,0,.42,0,2.62,.24,length-.16);
+    box(g,body,0,1.20,0,2.7,height,length);
     box(g,'#344e5b',0,1.20+height*.52,0,2.55,.16,length-.12);
-    box(g,body,0,1.28,-length*.5+.15,2.52,1.72,.24);
-    box(g,body,0,1.28,length*.5-.15,2.52,1.72,.24);
-    for(const side of [-1,1]){
-      if(side<0)box(g,body,side*1.28,.86,0,.14,.76,length-.35);
-      else for(const [a,b] of [[-length*.5+.2,-length*.18-.6],[-length*.18+.6,length*.5-.2]]){
-        const segment=(a+b)*.5;box(g,body,side*1.28,.86,segment,.14,.76,b-a);
-      }
-      box(g,body,side*1.28,1.78,-length*.5+.28,.14,.80,.36);
-      box(g,body,side*1.28,1.78,length*.5-.28,.14,.80,.36);
-      for(let z=-length*.34;z<=length*.34;z+=length*.22){
-        const doorGap=side===1&&Math.abs(z+length*.18)<.8;
-        if(!doorGap)box(g,glass,side*1.355,1.49,z,.045,.78,1.04);
-      }
-      for(let z=-length*.39;z<=length*.39;z+=length*.22){
-        const doorGap=side===1&&Math.abs(z+length*.18)<.8;
-        if(!doorGap)box(g,body,side*1.36,1.49,z,.08,.91,.11);
-      }
-    }
-    box(g,'#526e7b',0,1.62,-length*.5,2.34,.91,.12);
-    box(g,'#344e5b',-.72,1.03,-length*.25,.55,.13,.75);
-    box(g,'#526e7b',-.72,1.36,-length*.25,.58,.68,.58);
-    box(g,'#344e5b',0,1.39,-length*.25,.08,1.55,.10);
-    for(const z of [-length*.31,-length*.08,length*.15,length*.34]){
-      for(const x of [-.88,.88]){
-        box(g,'#526c7c',x,.75,z,.66,.14,.86);
-        box(g,'#69889a',x,.99,z+.20,.64,.56,.20);
-      }
-    }
-    for(const x of [-1.08,1.08]){
-      box(g,'#b9d4c8',x,1.83,0,.055,.055,length*.77);
-      for(let z=-length*.32;z<length*.4;z+=.84)box(g,'#d7e5d7',x,1.64,z,.045,.38,.045);
-    }
-    for(const z of [-length*.18,length*.28]){
-      box(g,'#a4a89a',1.40,.17,z,.44,.12,1.12);
-      box(g,'#a4a89a',1.55,.34,z,.15,.22,1.12);
-    }
+    for(let z=-length*.34;z<=length*.34;z+=length*.22)for(const x of [-1.37,1.37])box(g,glass,x,1.47,z,.08,.72,1.10);
+    box(g,'#526e7b',0,1.5,-length*.5,2.34,.9,.09);
     for(const z of [-length*.31,length*.31])for(const x of [-1.18,1.18])wheel(g,x,z);
     if(variant===1){
       box(g,'#d7c58c',0,2.82,-.12,2.22,.19,1.75);

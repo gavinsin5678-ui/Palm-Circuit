@@ -28,6 +28,8 @@ const chassis={
     ['thermal','Thermal Glider',45,'#c9e6db','soar','Climb assist with a wide, high-lift wing',.87,.82],
     ['sprintjet','Sprintjet',108,'#adc0eb','afterburn','Short high-speed cruise boost',1.27,1.02],
     ['trimotor','TriStar Courier',142,'#edc28a','stabilize','Automatic bank damping for approaches',1.05,.91]]},
+  fighter:{kind:'air',model:'fighter',variants:[
+    ['fighter','Fighter Jet',680,'#91aee8','afterburn','High-agility fighter with a 1500 km/h top speed',1.58,1.58]]},
   boat:{kind:'boat',model:'boat',variants:[
     ['dart','Dart Jetboat',75,'#f8aa9f','skim','Stronger acceleration across chop',1.15,1.02],
     ['spin','Spinline Runabout',88,'#9ed9e0','rudder','Tight low-speed turns',1.05,1.24],
@@ -76,4 +78,9 @@ chassis.ferry={kind:'boat',model:'ferry',variants:[
 export const fleetProducts=Object.fromEntries(Object.entries(chassis).flatMap(([family,{kind,model,variants}])=>variants.map(
   ([id,name,price,color,ability,info,power,steer],variant)=>[id,{family,kind,chassis:model,model:id,variant,name,price,color,ability,info:`${info}. Press H to activate.`,power,steer,dynamics:roadDynamics[model]}]
 )));
+fleetProducts.apex.topSpeed=280;
+fleetProducts.ghost.topSpeed=280;
+fleetProducts.tailwind.topSpeed=280;
+for(const id of ['thermal','sprintjet','trimotor'])fleetProducts[id].topSpeed=650;
+fleetProducts.fighter.topSpeed=1500;
 export const aircraft=Object.keys(fleetProducts).filter(id=>fleetProducts[id].kind==='air');

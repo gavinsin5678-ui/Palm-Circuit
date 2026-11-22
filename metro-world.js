@@ -70,14 +70,12 @@ export const railSector=(x,y)=>y>-3?'Surface line':x>31&&x<237?'Under the bay':'
 const makeSegments=points=>{
   const control=points.map(([x,z,y])=>new T.Vector3(x,y,z));
   const curve=new T.CatmullRomCurve3(control,false,'centripetal',.5);
-  const controlLength=control.slice(1).reduce((n,p,i)=>n+p.distanceTo(control[i]),0);
-  curve.arcLengthDivisions=Math.max(200,Math.ceil(controlLength*2));curve.updateArcLengths();
-  const length=curve.getLength(),count=Math.max((points.length-1)*16,Math.ceil(controlLength/4));
-  const sampled=Array.from({length:count+1},(_,i)=>curve.getPointAt(i/count)).map(p=>[p.x,p.z,p.y]);
-  const segments=[];let segmentLength=0;
+  const count=Math.max((points.length-1)*16,Math.ceil(control.slice(1).reduce((n,p,i)=>n+p.distanceTo(control[i]),0)/4));
+  const sampled=curve.getPoints(count).map(p=>[p.x,p.z,p.y]);
+  const segments=[];let length=0;
   for(let i=1;i<sampled.length;i++){
     const a=sampled[i-1],b=sampled[i],len=Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]);
-    if(len>.001){segments.push({a,b,len,start:segmentLength});segmentLength+=len}
+    if(len>.001){segments.push({a,b,len,start:length});length+=len}
   }
   return {segments,length,curve};
 };
@@ -85,9 +83,10 @@ const routes=Object.fromEntries(Object.entries(railRoutes).map(([id,points])=>[i
 export const railRouteLength=line=>routes[line==='below'?'below':'surface'].length;
 export const railLength=railRouteLength('surface');
 export function railAt(distance,line='surface'){
-  const {length,curve}=routes[line==='below'?'below':'surface'];
-  const s=Math.max(0,Math.min(length,distance)),u=s/length,p=curve.getPointAt(u),t=curve.getTangentAt(u);
-  return {x:p.x,z:p.z,y:p.y,heading:Math.atan2(t.x,-t.z)};
+  const {segments,length}=routes[line==='below'?'below':'surface'];
+  const s=Math.max(0,Math.min(length,distance)), seg=segments.find(q=>s<=q.start+q.len)??segments.at(-1);
+  const p=(s-seg.start)/seg.len,{a,b}=seg;
+  return {x:a[0]+(b[0]-a[0])*p,z:a[1]+(b[1]-a[1])*p,y:a[2]+(b[2]-a[2])*p,heading:Math.atan2(b[0]-a[0],a[1]-b[1])};
 }
 export function nearestRail(x,z,includeBelow=false,line='surface'){
   const {segments}=routes[line==='below'?'below':'surface'];
@@ -95,15 +94,12 @@ export function nearestRail(x,z,includeBelow=false,line='surface'){
   for(const {a,b,len,start} of segments){
     let t=Math.max(0,Math.min(1,((x-a[0])*(b[0]-a[0])+(z-a[1])*(b[1]-a[1]))/(Math.pow(b[0]-a[0],2)+Math.pow(b[1]-a[1],2))));
     if(line==='surface'&&!includeBelow&&a[2]<-2&&b[2]<-2)continue;
-    let track=start+len*t,px=a[0]+(b[0]-a[0])*t,pz=a[1]+(b[1]-a[1])*t,py=a[2]+(b[2]-a[2])*t;
-    if(line==='surface'&&!includeBelow&&py<-2){
-      t=a[2]>b[2]?0:1;track=start+len*t;
-      px=a[0]+(b[0]-a[0])*t;pz=a[1]+(b[1]-a[1])*t;py=a[2]+(b[2]-a[2])*t;
-    }
-    const d=Math.hypot(x-px,z-pz);
-    if(!best||d<best.d)best={d,track};
+    const p=railAt(start+len*t,line);
+    if(line==='surface'&&!includeBelow&&p.y<-2){t=a[2]>b[2]?0:1;Object.assign(p,railAt(start+len*t,line))}
+    const d=Math.hypot(x-p.x,z-p.z);
+    if(!best||d<best.d)best={...p,d,track:start+len*t};
   }
-  return best?{...railAt(best.track,line),...best}:undefined;
+  return best;
 }
 export const railStop=(s,line='surface')=>nearestRail(s.x,s.z,line==='below',line).track;
 
@@ -124,14 +120,9 @@ function sign(g,x,y,z,name,color='#92f2d2',rot=0){
   const cvs=document.createElement('canvas');cvs.width=704;cvs.height=112;
   const ctx=cvs.getContext('2d');ctx.fillStyle='#121e2b';ctx.fillRect(0,0,704,112);ctx.fillStyle=color;ctx.fillRect(0,0,12,112);
   ctx.font='700 53px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name.toUpperCase(),356,57,655);
-  const tx=new T.CanvasTexture(cvs);tx.colorSpace=T.SRGBColorSpace;tx.flipY=true;
-  const width=Math.min(12,Math.max(4,name.length*.53)),root=new T.Group();
-  root.position.set(x,y,z);root.rotation.y=rot;g.add(root);
-  box(root,0,0,0,width+.18,1.5,.18,'#243b48');
-  for(const [side,turn] of [[1,0],[-1,Math.PI]]){
-    const face=new T.Mesh(new T.PlaneGeometry(width,1.32),new T.MeshBasicMaterial({map:tx}));
-    face.position.z=side*.101;face.rotation.y=turn;root.add(face);
-  }
+  const tx=new T.CanvasTexture(cvs);tx.colorSpace=T.SRGBColorSpace;
+  const m=new T.Mesh(new T.PlaneGeometry(Math.min(12,Math.max(4,name.length*.53)),1.32),new T.MeshBasicMaterial({map:tx,side:T.DoubleSide}));
+  m.position.set(x,y,z);m.rotation.y=rot;g.add(m);
 }
 function batch(group){
   group.updateMatrixWorld(true);
@@ -233,6 +224,24 @@ function makeRailInfrastructure(g){
         new T.MeshStandardMaterial({color:'#344b5c',roughness:.92,metalness:.08,side:T.DoubleSide})
       );
       g.add(tunnel);
+      for(const d of [0,length]){
+        const p=railAt(d,'below'),t=curve.getTangentAt(d/length);
+        const axis=t.clone().normalize();
+        const bulkhead=new T.Mesh(
+          new T.CylinderGeometry(4.23,4.23,.48,20),
+          mat('#536a75')
+        );
+        bulkhead.position.set(p.x,p.y,p.z);
+        bulkhead.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),axis);
+        g.add(bulkhead);
+        const buffer=new T.Mesh(
+          new T.BoxGeometry(7.2,.55,3.2),
+          mat('#8e6f55')
+        );
+        buffer.position.copy(new T.Vector3(p.x,p.y-.12,p.z).addScaledVector(axis,d===0?-2.1:2.1));
+        buffer.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),axis);
+        g.add(buffer);
+      }
     }
     for(const {a,b,len,start} of segments){
       const dx=b[0]-a[0],dz=b[1]-a[1],xz=Math.hypot(dx,dz),nx=-dz/xz,nz=dx/xz,angle=Math.atan2(dx,dz);
@@ -271,23 +280,6 @@ function makeStops(g){
       box(g,x,.032,z+3.55,3.2,.043,1.1,c);
       continue;
     }
-    if(type==='airport'){
-      box(g,x,.08,z,15.2,.16,10.4,'#819398');
-      box(g,x,4.9,z,15.5,.36,10.8,'#516b7a');
-      for(const side of [-1,1]){
-        box(g,x+side*7.45,2.52,z,.35,4.7,.35,'#647c86');
-        if(side<0)box(g,x,2.52,z+side*5.05,15.1,4.7,.25,'#4e6673');
-        else for(const offset of [-5,5])box(g,x+offset,2.52,z+side*5.05,5.1,4.7,.25,'#4e6673');
-        for(let xx=-5.8;xx<=5.8;xx+=2.9){
-          if(Math.abs(xx)<1.5)continue;
-          box(g,x+xx,2.5,z+side*4.9,.12,3.55,.055,'#88bdc9',true);
-        }
-      }
-      box(g,x,5.15,z,12.4,.15,7.8,'#6d8791');
-      box(g,x,.22,z+5.25,2.2,.12,1.1,c);
-      sign(g,x,4.05,z+5.32,s.name,c);
-      continue;
-    }
     if(!major){
       box(g,x,1.12,z,.16,2.24,.16,'#adb9bb');sign(g,x,2.1,z,stopTypes[type],c);
       if(type==='bus'||type==='taxi')box(g,x,.032,z+3.55,3.2,.043,1.1,c);
@@ -297,10 +289,7 @@ function makeStops(g){
     box(g,x,.027,z,w,.12,d,'#879596');
     box(g,x,3.04,z,w+.5,.29,d+.55,c);
     for(const a of [-1,1])for(const b of [-1,1])box(g,x+a*(w*.45),1.46,z+b*(d*.42),.24,2.9,.23,'#566c73');
-    if(type==='rail'){
-      const wing=(w-.48-3.6)/2;
-      for(const side of [-1,1])box(g,x+side*(1.8+wing/2),1.25,z-d*.5,wing,2.47,.21,'#314c58');
-    }else box(g,x,1.25,z-d*.5,w-.48,2.47,.21,'#314c58');
+    box(g,x,1.25,z-d*.5,w-.48,2.47,.21,'#314c58');
     for(const side of [-1,1]){
       box(g,x+side*w*.28,.46,z-d*.28,w*.27,.31,.61,'#bca583');
       box(g,x+side*(w*.5-.4),1.1,z+.9,.48,.41,.38,c,true);
@@ -401,6 +390,21 @@ export function makeArchipelago(scene){
   const train=modelTrain(),metro=modelTrain(),ferry=modelFerry(),flight=modelFlight(),bus=new T.Group(),taxi=new T.Group(),patrol=new T.Group();
   shell(bus,2.9,2.91,8,'#75b599');shell(taxi,2.24,1.57,4.35,'#e7b468');shell(patrol,2.22,1.61,4.62,'#d3e0e9');
   const red=box(patrol,-.36,1.65,.06,.65,.21,.31,'#ff6869',true),blue=box(patrol,.36,1.65,.06,.65,.21,.31,'#6c98ff',true);
+  const patrolBoat=new T.Group();
+  shell(patrolBoat,2.35,1.05,6.2,'#d7e5e8');
+  box(patrolBoat,0,.72,-.20,1.82,.62,3.2,'#4f6e7b');
+  box(patrolBoat,-.42,1.31,-.10,.58,.19,.32,'#ff6869',true);
+  box(patrolBoat,.42,1.31,-.10,.58,.19,.32,'#6c98ff',true);
+  patrolBoat.visible=false;scene.add(patrolBoat);
+  const patrolAircraft=new T.Group();
+  box(patrolAircraft,0,.55,0,1.22,.55,5.8,'#d7e5e8');
+  box(patrolAircraft,0,.65,.45,7.1,.12,2.0,'#617d8e');
+  box(patrolAircraft,0,.88,-1.25,.90,.42,.95,'#2e4a5b');
+  for(const x of [-1,1]){
+    box(patrolAircraft,x*1.55,1.12,-2.05,.12,1.05,.75,'#617d8e');
+    box(patrolAircraft,x*.48,.42,-3.10,.28,.28,.62,'#ff9a48',true);
+  }
+  patrolAircraft.visible=false;scene.add(patrolAircraft);
   const helicopter=new T.Group(),rotor=new T.Group();
   box(helicopter,0,.62,0,1.6,.72,2.9,'#354653');
   box(helicopter,0,.82,-.63,1.43,.57,.07,'#7db0c0',true);
@@ -428,7 +432,7 @@ export function makeArchipelago(scene){
   const pulse=new T.Mesh(new T.RingGeometry(.88,1,42),new T.MeshBasicMaterial({color:'#b4f9f0',side:T.DoubleSide,transparent:true}));
   pulse.rotation.x=-Math.PI/2;scene.add(pulse);pulse.visible=false;
   const vehicleModels={rail:metro.front,bus,taxi,ferry,airport:flight};
-  return {train,metro,vehicleModels,patrol,red,blue,helicopter,helicopterRotor:rotor,mae,way,arrow,traffic,props,pulse,
+  return {train,metro,vehicleModels,patrol,patrolBoat,patrolAircraft,red,blue,helicopter,helicopterRotor:rotor,mae,way,arrow,traffic,props,pulse,
     hit:(x,z,y=.5,r=.35)=>solids.some(o=>y<o.h&&Math.abs(x-o.x)<o.w+r&&Math.abs(z-o.z)<o.d+r),
     properties:solids,
     signal(t){for(const {s,heads} of lights)for(const {axis,bulbs} of heads){const k=['red','amber','green'].indexOf(signalAt(s,t,axis));for(let n=0;n<3;n++)bulbs[n].visible=n===k;}}

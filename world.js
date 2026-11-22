@@ -182,14 +182,8 @@ function sign(scene,text,x,y,z){
   const cvs=document.createElement('canvas');cvs.width=512;cvs.height=112;const g=cvs.getContext('2d');
   g.fillStyle='#18363e';g.fillRect(0,0,512,112);g.strokeStyle='#e0a87b';g.lineWidth=7;g.strokeRect(5,5,502,102);
   g.textAlign='center';g.textBaseline='middle';g.font='bold 48px monospace';g.fillStyle='#ffdabb';g.fillText(text,256,55);
-  const map=new T.CanvasTexture(cvs);map.colorSpace=T.SRGBColorSpace;map.anisotropy=4;map.flipY=true;
-  const root=new T.Group();root.position.set(x,y,z);root.rotation.y=Math.PI/2;scene.add(root);
-  const backing=new T.Mesh(baseGeo,mat('#18363e'));
-  backing.scale.set(8.48,1.98,.18);root.add(backing);
-  for(const [side,turn] of [[1,0],[-1,Math.PI]]){
-    const face=new T.Mesh(new T.PlaneGeometry(8.3,1.8),raw('#ffffff',{map}));
-    face.position.z=side*.101;face.rotation.y=turn;root.add(face);
-  }
+  const map=new T.CanvasTexture(cvs);map.colorSpace=T.SRGBColorSpace;map.anisotropy=4;
+  const s=new T.Mesh(new T.PlaneGeometry(8.3,1.8),raw('#ffffff',{map}));s.position.set(x,y,z);s.rotation.y=Math.PI/2;scene.add(s);
 }
 function atmosphere(scene){
   const sky=new T.Mesh(new T.SphereGeometry(580,32,18),new T.ShaderMaterial({

@@ -1,14 +1,14 @@
 import * as T from './vendor/three.module.min.js';
-import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} from './world.js?v=walkable-transit-v2';
+import {createWorld,runway,runwayWest,onStreet,atAirfield,districtFor,isCore} from './world.js?v=surface-detail';
 import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,ragdollPerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=articulated-physics';
 import {createSocial} from './social.js?v=connections';
-import {createMobility} from './mobility.js?v=walkable-transit-v2';
-import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=walkable-transit-v2';
-import {makeTerminal,venueFor} from './terminal-world.js?v=walkable-transit-v2';
+import {createMobility} from './mobility.js?v=gameplay-overhaul';
+import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
+import {makeTerminal,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
 import {fleetProducts,vehicleDynamics} from './fleet.js?v=road-dynamics';
-import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=walkable-transit-v2';
+import {makeExtraModels,vehiclePaint} from './fleet-models.js?v=road-suspension';
 import {createCombat} from './combat.js?v=ragdoll-physics';
 import {flightEnvelope,coordinatedTurnRate,stepWatercraft,stepSpringDamper} from './vehicle-physics.js?v=suspension-model';
 import {createAirDefense} from './air-defense.js?v=hijack';
@@ -316,7 +316,7 @@ function endRide(dest){
   let loc=[dest.x,dest.z,0];
   if(['rail','ferry','airport'].includes(dest.type)){
     const east=[7,6,Math.PI/2],west=[-7,6,-Math.PI/2],towardCity=dest.type==='airport'||dest.type==='ferry'&&dest.region==='main';
-    const candidates=[[0,3.3,Math.PI],...(towardCity?[west,east]:[east,west]),[0,6.4,Math.PI],[7,-4,Math.PI/2],[-7,-4,-Math.PI/2]];
+    const candidates=[...(towardCity?[west,east]:[east,west]),[0,6.4,Math.PI],[7,-4,Math.PI/2],[-7,-4,-Math.PI/2]];
     for(const [a,b,h] of candidates){
       const xx=dest.x+a,zz=dest.z+b;
       if(solidLand(xx,zz)&&!solidHit(xx,zz,.5,.5)){loc=[xx,zz,h];break}
@@ -616,6 +616,8 @@ function updatePlane(dt){
   const pitch=Number((up&&!arrowShift)||touchKeys.has('ArrowUp'))-Number((down&&!arrowShift)||touchKeys.has('ArrowDown'));
   const ratio=(p?.power??1)*(ability('afterburn')&&air?1.27:1);
   state.speed=core.air_speed(state.speed/ratio,state.throttle,Math.sin(state.pitch),+brake,+!air,dt)*ratio;
+  const airTopSpeed=(p?.topSpeed??(state.vehicle==='plane'?650:650))/3.6;
+  state.speed=minmax(state.speed,-airTopSpeed*.15,airTopSpeed);
   const stallBase=p?.model==='thermal'?18:p?.model==='sprintjet'?31:p?.model==='trimotor'?24:p?.family==='float'?22:27;
   const takeoffSpeed=ability('short')?18:stallBase;
   const envelope=flightEnvelope(state.speed,state.bank,stallBase),authority=air?envelope.control:1;
@@ -657,7 +659,7 @@ function updatePlane(dt){
   state.x=x;state.z=z;state.altitude=Math.max(0,y);state.airborne=y>.025||(air&&y>0);
 }
 function updateWalk(dt){
-  if(stunTimer>0){state.speed=0;state.footAcceleration=0;document.body.classList.toggle('airliner-aboard',!!indoor?.commercialVehicleAt?.(state.x,state.z));return}
+  if(stunTimer>0){state.speed=0;state.footAcceleration=0;return}
   const {x,z}=state;
   const wet=!indoor&&!solidLand(x,z)&&dockHeight(x,z)===null;
   if(state.jump>0||jumpVelocity>0){
@@ -693,15 +695,6 @@ function updateWalk(dt){
       stunTimer=Math.max(stunTimer,.65);state.speed*=-.18;
     }
   }
-  const transition=indoor?.transitionAt?.(state.x,state.z);
-  if(transition==='street')leaveVenue();
-  else if(transition)enterVenue(indoor.stop,transition,true,[state.x,state.z],state.heading);
-  else if(!indoor&&walking()){
-    const stop=mobility.venueEntranceAt(state.x,state.z);
-    if(stop)enterVenue(stop,venueFor(stop),mobility.gateOpen(stop.id));
-  }
-  if(indoor){mobility.autoFareGateAt(state.x,state.z);mobility.boardTransitAt(state.x,state.z,simTime)}
-  document.body.classList.toggle('airliner-aboard',!!indoor?.commercialVehicleAt?.(state.x,state.z));
   state.swimming=!indoor&&!solidLand(state.x,state.z)&&dockHeight(state.x,state.z)===null;
   if(state.swimming){state.jump=0;jumpVelocity=0}
 }
@@ -883,6 +876,8 @@ function update(dt){
       (.52+.48*(state.vehicleHealth??vehicleMaxHealth(state.vehicle))/vehicleMaxHealth(state.vehicle));
   const speedBefore=state.speed;
   state.speed=core.longitudinal(state.speed/ratio,+accelerating,+braking,+action('Space'),onRoad||ability('grip')||roughGrip?1:.56,dt*(state.vehicle==='van'?.86:1))*ratio;
+  const roadTopSpeed=(mod?.topSpeed??(state.vehicle==='sport'?280:Infinity))/3.6;
+  if(Number.isFinite(roadTopSpeed))state.speed=minmax(state.speed,-roadTopSpeed*.18,roadTopSpeed);
   if(ability('launch')&&accelerating&&state.speed<12)state.speed+=dt*8;
   if(ability('anchor')&&braking&&state.speed>0)state.speed=Math.max(0,state.speed-dt*14);
   if(ability('bus-airbrake')&&(braking||action('Space'))&&state.speed>0)state.speed=Math.max(0,state.speed-dt*19);
@@ -1000,12 +995,12 @@ function draw(dt,now){
   prop.rotation.z+=dt*(3+state.throttle*73);
   const {life}=world,t=simTime;
   const pier=walking()&&!indoor?dockHeight(x,z):null;
-  const footY=indoor?(indoor.groupY+(indoor.floorAt?.(x,z)??0)+state.jump):state.swimming?waveHeight(x,z,t)-.61:(pier??.065)+state.jump;
+  const footY=state.swimming?waveHeight(x,z,t)-.61:(pier??.065)+state.jump;
   const pedestrian=indoor?.player??life.player;
   life.player.model.visible=walking()&&!indoor&&state.camera!==1&&!ride;
   if(walking()&&!ride){
     pedestrian.model.visible=state.camera!==1;
-    pedestrian.model.position.set(x,indoor?.scene?state.jump+(indoor.floorAt?.(x,z)??0):footY,z);
+    pedestrian.model.position.set(x,indoor?.scene?state.jump:footY,z);
     pedestrian.model.rotation.set(state.swimming?-1.07:0,-heading,0,'YXZ');
     animatePerson(pedestrian,t,speed,state.swimming);
     if(!pedestrian.ragdoll){
@@ -1147,13 +1142,12 @@ function drawTransitModels(ride,cab,t){
     pose(arch.train.front,railAt(t));pose(arch.train.back,railAt(t-offset));
     if(t<4.5||tram)arch.train.back.visible=false;
   }
-  const line=(t*.018)%2,phase=line<1?line:2-line,eased=phase*phase*(3-2*phase),schedule=line<1?eased:1-eased;
+  const line=(t*.018)%2, schedule=line<1?line:2-line;
   const metro=ride?.type==='rail'||!ride&&!manual&&state.phase==='running',route=ride?.line??'below',length=railRouteLength(route);
-  const railProgress=ride?.type==='rail'?ride.time/ride.duration:0,railEase=railProgress*railProgress*(3-2*railProgress);
   arch.metro.front.visible=metro&&!(ride?.type==='rail'&&(cab||ride.pose.y<-2));
   arch.metro.back.visible=metro;
   if(metro){
-    const passenger=ride?.type==='rail',k=passenger?ride.from+(ride.to-ride.from)*railEase:18+schedule*(length-31),
+    const passenger=ride?.type==='rail',k=passenger?ride.from+(ride.to-ride.from)*ride.time/ride.duration:18+schedule*(length-31),
       sign=passenger?Math.sign(ride.to-ride.from):(line<1?1:-1);
     const b=railAt(k-sign*offset,route);
     if(sign<0)b.heading+=Math.PI;

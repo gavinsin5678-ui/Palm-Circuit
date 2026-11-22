@@ -76,7 +76,7 @@ function leafTextures(){
   const ctx=leaves.getContext('2d'),a=alpha.getContext('2d'),b=bump.getContext('2d');
   let n=937;
   const palette=['#315b45','#426e4e','#587d50','#718957','#8b9b61','#385f50'];
-  for(let i=0;i<430;i++){
+  for(let i=0;i<900;i++){
     n=(Math.imul(n,1664525)+1013904223)>>>0;
     const x=n%size,y=(n>>>8)%size,rx=2+(n>>>16)%5,ry=1+(n>>>23)%3,rotation=(n%628)/100;
     ctx.save();ctx.translate(x,y);ctx.rotate(rotation);ctx.fillStyle=palette[(n>>>12)%palette.length];
@@ -104,7 +104,7 @@ function initSurfaceMaterials(){
   const barkMap=barkTexture(),barkBump=barkTexture();barkBump.colorSpace=T.NoColorSpace;
   barkMaterial=mat('#ffffff',{map:barkMap,bumpMap:barkBump,bumpScale:.045,roughness:.98});
   const leaves=leafTextures();
-  foliage=mat('#ffffff',{...leaves,side:T.DoubleSide,alphaTest:.28,roughness:.96,bumpScale:.025});
+  foliage=mat('#ffffff',{...leaves,side:T.DoubleSide,alphaTest:.5,roughness:.96,bumpScale:.025});
 }
 function lattice(x,z){
   let n=(Math.imul(x|0,374761393)+Math.imul(z|0,668265263))|0;
@@ -162,8 +162,11 @@ function terrainHeight(x,z,mode){
   if(mode==='city')return (broad-.5)*.24+(fine-.5)*.045;
   if(mode==='shore')return (broad-.5)*.42+(fine-.5)*.10;
   if(mode.startsWith('island-')){
-    const biome=mode.slice(7),amplitude=biome==='dune'?2.35:biome==='alpine'?1.65:biome==='jungle'?1.75:1.05;
-    const ridge=biome==='dune'?Math.sin(z*.095+fbm(x*.018,z*.018)*4)*.26:0;
+    const biome=mode.slice(7),amplitude=biome==='dune'?2.35:biome==='alpine'?3.2:
+      biome==='jungle'?2.4:biome==='obsidian'?2.8:biome==='bamboo'?3.4:biome==='atoll'?.8:1.8;
+    const ridge=biome==='dune'?Math.sin(z*.095+fbm(x*.018,z*.018)*4)*.26:
+      biome==='bamboo'?Math.sin(x*.038+fbm(x*.018,z*.018)*2)*.55:
+      biome==='obsidian'?Math.sin(x*.064+z*.035)*.72:0;
     return (broad-.5)*amplitude+(fine-.5)*.58+ridge;
   }
   return (broad-.5)*5.2+(fine-.5)*1.45;
@@ -172,7 +175,8 @@ function terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z,fla
   const vertices=[],colors=[],indices=[],dx=w/cols,dz=d/rows;
   const palettes={
     dune:['#a98553','#e0bf7a'],jungle:['#42684b','#8c9860'],alpine:['#626f76','#e5ece8'],
-    future:['#55566e','#a09bb3']
+    future:['#55566e','#a09bb3'],obsidian:['#34373c','#706c68'],bamboo:['#547b55','#a5b76d'],
+    atoll:['#d8c49b','#f2dfbd']
   };
   const palette=mode.startsWith('island-')?palettes[mode.slice(7)]:null;
   terrainBase.set(palette?.[0]??(mode==='shore'?'#777f6f':'#75866f'));
@@ -187,11 +191,10 @@ function terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z,fla
       height*=fade;
     }
     if(mode.startsWith('island-')){
-      const fade=Math.max(0,Math.min(1,(gx-(offsetX-w/2))/12,(offsetX+w/2-gx)/12,
-        (gz-(offsetZ-d/2))/12,(offsetZ+d/2-gz)/12));
-      height*=fade;
-      const center=[96,-120,312,528].reduce((best,value)=>Math.abs(gz-value)<Math.abs(gz-best)?value:best,96);
-      if(Math.abs(gx-313)<9||Math.abs(gz-center)<9||Math.abs(gx-366)<6||gx>340&&Math.abs(gz-center-40)<6)height=0;
+      const fade=Math.max(0,Math.min(1,(gx-(offsetX-w/2))/20,(offsetX+w/2-gx)/20,
+        (gz-(offsetZ-d/2))/20,(offsetZ+d/2-gz)/20));
+      const urban= Math.abs(gx-offsetX)<=84&&Math.abs(gz-offsetZ)<=76;
+      height=urban?1.9:1.9*fade+Math.max(0,height)*fade-1.9;
     }
     if(mode==='city'&&onStreet(gx,gz))height=0;
     points.push({px,pz,gx,gz,height,airportGround});
@@ -325,6 +328,42 @@ function tree(x,z,s=1,offsetX=0,offsetZ=0){
       pick(['#42694c','#52764f','#668354','#3c6248','#758b57']));
   }
 }
+export function addIslandForest(parent,placements,biome){
+  if(!foliage||!barkMaterial)throw new Error('Surface materials must be initialized before creating island forests.');
+  if(!placements.length)return;
+  const trunkMesh=new T.InstancedMesh(treeTrunk,barkMaterial,placements.length),
+    clusters=[[0,0,0,1.05,1.04,1.05],[-.82,-.22,.12,.78,.8,.8],[.8,-.18,-.16,.81,.83,.82],
+      [-.28,.65,-.52,.73,.77,.73],[.34,.58,.53,.76,.78,.73],[0,.85,.05,.67,.72,.68]],
+    leafMesh=new T.InstancedMesh(canopy,foliage,placements.length*clusters.length),
+    palettes={
+      dune:['#536b42','#64764a','#7f8952'],jungle:['#315b45','#426e4e','#587d50'],
+      snow:['#48675e','#58756c','#738778'],future:['#435a51','#5c7056','#7c8060'],
+      obsidian:['#304b40','#3e5e45','#596c49'],bamboo:['#3b6947','#568154','#79a15d'],
+      atoll:['#4c6946','#64804e','#82925a']
+    },
+    colors=palettes[biome]??palettes.jungle;
+  let leafIndex=0;
+  for(let index=0;index<placements.length;index++){
+    const {x,z,scale=1}=placements[index];
+    dummy.position.set(x,2.25*scale,z);dummy.rotation.set(0,0,.025*Math.sin(x+z));
+    dummy.scale.set(.48*scale,4.5*scale,.48*scale);dummy.updateMatrix();
+    trunkMesh.setMatrixAt(index,dummy.matrix);
+    for(let cluster=0;cluster<clusters.length;cluster++){
+      const [dx,dy,dz,sx,sy,sz]=clusters[cluster],pine=biome==='snow'||biome==='obsidian',
+        spread=pine ? .78 : 1;
+      dummy.position.set(x+dx*scale*spread,(5.1+dy)*scale,z+dz*scale*spread);
+      dummy.rotation.set(0,(index%7)*.41+cluster*.83,0);
+      dummy.scale.set(sx*scale*spread,sy*scale,sz*scale*spread);dummy.updateMatrix();
+      leafMesh.setMatrixAt(leafIndex,dummy.matrix);
+      leafMesh.setColorAt(leafIndex,new T.Color(colors[(index+cluster)%colors.length]));
+      leafIndex++;
+    }
+  }
+  trunkMesh.instanceMatrix.needsUpdate=true;leafMesh.instanceMatrix.needsUpdate=true;
+  trunkMesh.castShadow=leafMesh.castShadow=true;
+  trunkMesh.receiveShadow=leafMesh.receiveShadow=true;
+  parent.add(trunkMesh,leafMesh);
+}
 function lamps(x,z,right){
   const d=right?-1:1;
   box(x,2.85,z,.16,5.7,.16,'#596878',metalMaterial);
@@ -420,23 +459,45 @@ function atmosphere(scene){
       gl_FragColor=vec4(c,1.);
     }`
   }));sky.renderOrder=-100;scene.add(sky);
-  const ocean=new T.Mesh(new T.PlaneGeometry(1,1),new T.ShaderMaterial({
-    uniforms:{clock:{value:0},normalMap:{value:waveNormalTexture()}},
-    vertexShader:`varying vec3 v;void main(){vec4 w=modelMatrix*vec4(position,1.);v=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-    fragmentShader:`uniform float clock;uniform sampler2D normalMap;varying vec3 v;
+  const ocean=new T.Mesh(new T.PlaneGeometry(1800,1800,256,256),new T.ShaderMaterial({
+    uniforms:{clock:{value:0},normalMap:{value:waveNormalTexture()},islandCenters:{value:[
+      new T.Vector3(313,-120,0),new T.Vector3(313,96,0),new T.Vector3(313,312,0),new T.Vector3(313,528,0),
+      new T.Vector3(560,-120,0),new T.Vector3(560,96,0),new T.Vector3(560,312,0)
+    ]}},
+    vertexShader:`uniform float clock;varying vec3 v;
+    float waveAt(vec2 p,float t){
+      return -.13+sin(p.y*.34+t*1.1)*.18+sin(p.x*.2+p.y*.13-t*.82)*.12+sin(p.x*.63-p.y*.46+t*1.7)*.035;
+    }
+    void main(){
+      vec4 w=modelMatrix*vec4(position,1.);
+      w.y=waveAt(w.xz,clock);
+      v=w.xyz;
+      gl_Position=projectionMatrix*viewMatrix*w;
+    }`,
+    fragmentShader:`uniform float clock;uniform sampler2D normalMap;uniform vec3 islandCenters[7];varying vec3 v;
     void main(){
       float x=max(0.,v.x-28.);
-      float a=sin(v.z*.51+sin(v.x*.52)*1.38+clock*.75), b=sin(v.z*1.05+v.x*.65-clock*.85);
-      float r=sin(v.x*1.32+sin(v.z*.48)*.48+clock*1.9);
+      float a=sin(v.z*.34+clock*1.1), b=sin(v.x*.2+v.z*.13-clock*.82);
+      float r=sin(v.x*.63-v.z*.46+clock*1.7);
       vec3 n1=texture2D(normalMap,v.xz*.041+vec2(clock*.013,-clock*.009)).xyz*2.-1.;
       vec3 n2=texture2D(normalMap,v.xz*.093+vec2(-clock*.019,clock*.015)).xyz*2.-1.;
-      vec3 normal=normalize(vec3((n1.x+n2.x*.48)*.74,1.,(n1.y+n2.y*.48)*.74));
+      vec3 normal=normalize(vec3((n1.x+n2.x*.48)*.74+cos(v.z*.34+clock*1.1)*.061+
+        cos(v.x*.2+v.z*.13-clock*.82)*.026,1.,
+        (n1.y+n2.y*.48)*.74+cos(v.x*.2+v.z*.13-clock*.82)*.016-
+        cos(v.x*.63-v.z*.46+clock*1.7)*.016));
       vec3 c=mix(vec3(.035,.22,.25),vec3(.018,.075,.17),smoothstep(18.,205.,x));
       c=mix(vec3(.025,.12,.15),c,smoothstep(0.,25.,x));
       c=mix(c,vec3(.58,.49,.56),smoothstep(60.,300.,length(v.xz-cameraPosition.xz)));
-      c+=vec3(.12,.15,.14)*pow(clamp(a*.54+b*.46,0.,1.),5.);
+      float crests=smoothstep(.22,.31,a*.49+b*.37+r*.14);
+      float shore=smoothstep(0.,2.8,v.x-30.5)*(1.-smoothstep(6.,12.,v.x-30.5));
+      for(int i=0;i<7;i++){
+        vec2 d=abs(v.xz-islandCenters[i].xy)-vec2(99.,91.);
+        float edge=max(d.x,d.y);
+        shore=max(shore,(1.-smoothstep(0.,4.,abs(edge)))*smoothstep(-.8,1.2,edge));
+      }
+      c+=vec3(.12,.15,.14)*pow(max(0.,a*.54+b*.46),5.);
+      c=mix(c,vec3(.88,.94,.87),crests*shore*.62);
       c=mix(c,vec3(.78,.85,.74),pow(max(0.,r),12.)*(1.-smoothstep(1.,8.,x))*.46);
-      c+=vec3(.11,.07,.07)*pow(max(0.,a*b),10.)*smoothstep(7.,32.,x);
       vec3 viewDir=normalize(v-cameraPosition);
       vec3 sunDir=normalize(vec3(.38,.13,-1.));
       float sun=max(dot(reflect(-sunDir,normal),viewDir),0.);
@@ -446,7 +507,7 @@ function atmosphere(scene){
       c=mix(c,haze,smoothstep(240.,535.,distance(v,cameraPosition)));
       gl_FragColor=vec4(c,1.);
     }`
-  }));ocean.rotation.x=-Math.PI/2;ocean.position.set(930,-.17,-24);ocean.scale.set(1800,1800,1);scene.add(ocean);
+  }));ocean.rotation.x=-Math.PI/2;ocean.position.set(930,0,-24);scene.add(ocean);
   return {sky,ocean};
 }
 function makeCar(paint, hero=false){
@@ -488,10 +549,15 @@ function trainer(){
   const fuselage=new T.Mesh(new T.SphereGeometry(1,18,12),white);fuselage.scale.set(.78,.66,3.11);fuselage.position.set(0,1.15,-.37);plane.add(fuselage);
   const cabin=new T.Mesh(new T.SphereGeometry(1,12,8),glass);cabin.scale.set(.66,.43,1.18);cabin.position.set(0,1.58,-.42);plane.add(cabin);
   block(0,1.91,-.37,1.34,.106,1.45,white);
+  const wingShape=new T.Shape();
+  wingShape.moveTo(-4.95,.2);wingShape.lineTo(0,.84);wingShape.lineTo(4.95,.2);
+  wingShape.lineTo(4.95,-.63);wingShape.lineTo(0,-.84);wingShape.lineTo(-4.95,-.63);wingShape.closePath();
+  const wingGeometry=new T.ExtrudeGeometry(wingShape,{depth:.14,steps:1,bevelEnabled:true,bevelSegments:2,bevelThickness:.035,bevelSize:.04});
+  wingGeometry.translate(0,0,-.07);wingGeometry.rotateX(-Math.PI/2);
+  const mainWing=new T.Mesh(wingGeometry,white);mainWing.position.set(0,1.88,-.37);plane.add(mainWing);
   for(const dir of [-1,1]){
     block(dir*.709,1.19,-.4,.045,.185,2.25,coral);
     block(dir*.58,1.64,-.12,.07,.53,.08,white);
-    block(dir*2.46,1.88,-.37,4.95,.14,1.68,white,dir*.035);
     block(dir*4.72,1.96,-.37,.52,.155,1.61,coral);
     block(dir*1.12,1.75,-.36,3.05,.115,.15,steel,dir*.18);
     block(dir*.91,1.33,2.28,1.89,.11,.87,white);
@@ -735,6 +801,8 @@ export function createWorld(){
       if(x!==0||direction<0)plane(x+direction*8.25,.05,z+i,1.1,.54,'#bdc1bd');
     }
   }
+  for(const x of roadsX)for(const z of roadsZ)
+    plane(x,.019,z,14.9,13.3,asphalt,paving);
   const boardwalkBuildings=[[-15,69,7.6,'#83bfb9'],[-16,32,9.1,'#e3b19b'],[-16,-16,10.3,'#b3b0be'],[-17,-64,11.4,'#d8bcaa'],[-17,-111,9.5,'#9bbdbb']];
   for(let i=0;i<roadsX.length-1;i++) for(let j=0;j<roadsZ.length-1;j++){
     const x=roadsX[i]+24,z=roadsZ[j]+24;
@@ -807,5 +875,5 @@ export function createWorld(){
   const circle=new T.Mesh(new T.RingGeometry(4.4,4.63,48),raw('#87f8d3',{side:T.DoubleSide,transparent:true,opacity:.55}));
   circle.rotation.x=-Math.PI/2;circle.position.y=.1;gate.add(circle);
   const beacon=new T.Mesh(new T.OctahedronGeometry(.48),raw('#e9ffe8'));beacon.position.y=7.5;gate.add(beacon);scene.add(gate);gate.visible=false;
-  return {scene,...sky,stream,solids,player,cars:{car:player,sport,van,jet,gravity},aircraft,life,wreck,playerShadow,traffic,gate,ring,circle,beacon};
+  return {scene,...sky,stream,solids,roadSurfaceMaterial:paving,player,cars:{car:player,sport,van,jet,gravity},aircraft,life,wreck,playerShadow,traffic,gate,ring,circle,beacon};
 }

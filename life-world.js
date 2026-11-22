@@ -37,7 +37,10 @@ export const dockHeight=(x,z)=>{
   if((x>=16&&x<=48&&Math.abs(z-69)<2)||(x>=44&&x<=48&&z>69&&z<85)||(x>44&&x<52&&Math.abs(z-84)<1.8))return .56;
   return null;
 };
-export const waveHeight=(x,z,t)=>-.13+Math.sin(z*.40+t*2.8)*.115+Math.sin(x*.63+z*.17-t*1.8)*.075;
+export const waveHeight=(x,z,t)=>-.13+
+  Math.sin(z*.34+t*1.1)*.18+
+  Math.sin(x*.2+z*.13-t*.82)*.12+
+  Math.sin(x*.63-z*.46+t*1.7)*.035;
 export function person(shirt='#5cbbad',skin='#bc8460',hero=false){
   const model=new T.Group(), limbs=[];
   round(model,0,1.19,0,.245,.34,.17,shirt);

@@ -2,11 +2,48 @@ import * as T from './vendor/three.module.min.js';
 import {nearestRail} from './metro-world.js?v=gameplay-overhaul';
 import {fleetProducts} from './fleet.js?v=road-dynamics';
 
-const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,12,8), tire=new T.CylinderGeometry(.43,.43,.22,14);
+const cube=new T.BoxGeometry(), round=new T.SphereGeometry(1,32,20), tire=new T.CylinderGeometry(.43,.43,.22,32);
+const materials=new Map(),bodyGeometries=new Map();
+function material(color){
+  if(!materials.has(color))materials.set(color,new T.MeshPhysicalMaterial({
+    color,roughness:.4,metalness:.12,clearcoat:.52,clearcoatRoughness:.22
+  }));
+  return materials.get(color);
+}
+const headlightMaterial=new T.MeshStandardMaterial({color:'#fff0b0',emissive:'#ffe49a',emissiveIntensity:1.6,roughness:.22});
+const taillightMaterial=new T.MeshStandardMaterial({color:'#e84a4a',emissive:'#b92828',emissiveIntensity:1.2,roughness:.3});
 function shape(g,geo,color,x,y,z,w,h,d){
-  const m=new T.Mesh(geo,new T.MeshLambertMaterial({color}));m.position.set(x,y,z);m.scale.set(w,h,d);g.add(m);return m
+  const m=new T.Mesh(geo,material(color));m.position.set(x,y,z);m.scale.set(w,h,d);g.add(m);return m
 }
 const box=(g,...args)=>shape(g,cube,...args);
+function curvedBody(g,color,x,y,z,w,h,d){
+  const key=`${w}/${h}/${d}`;
+  if(!bodyGeometries.has(key)){
+    const r=Math.min(.38,w*.16,h*.24),profile=new T.Shape();
+    profile.moveTo(-w*.5+r,0);profile.lineTo(w*.5-r,0);
+    profile.quadraticCurveTo(w*.5,0,w*.5,r);
+    profile.lineTo(w*.5,h-r);profile.quadraticCurveTo(w*.5,h,w*.5-r,h);
+    profile.lineTo(-w*.5+r,h);profile.quadraticCurveTo(-w*.5,h,-w*.5,h-r);
+    profile.lineTo(-w*.5,r);profile.quadraticCurveTo(-w*.5,0,-w*.5+r,0);
+    const bevel=Math.min(.12,r*.45);
+    const geometry=new T.ExtrudeGeometry(profile,{depth:d-bevel*2,steps:1,curveSegments:12,
+      bevelEnabled:true,bevelSegments:3,bevelThickness:bevel,bevelSize:bevel});
+    geometry.translate(0,0,-d*.5+bevel);bodyGeometries.set(key,geometry);
+  }
+  const mesh=new T.Mesh(bodyGeometries.get(key),material(color));mesh.position.set(x,y,z);g.add(mesh);return mesh;
+}
+function wing(g,color,span,chord,y,z,sweep=.32){
+  const key=`wing/${span}/${chord}/${sweep}`;
+  if(!bodyGeometries.has(key)){
+    const shape2=new T.Shape();
+    shape2.moveTo(-span*.5,chord*.48);shape2.lineTo(span*.5,chord*.48-sweep*chord);
+    shape2.lineTo(span*.5,-chord*.48-sweep*chord);shape2.lineTo(-span*.5,-chord*.48);
+    shape2.closePath();
+    const geometry=new T.ExtrudeGeometry(shape2,{depth:.15,steps:1,bevelEnabled:true,bevelSegments:2,bevelThickness:.035,bevelSize:.04});
+    geometry.translate(0,0,-.075);geometry.rotateX(-Math.PI/2);bodyGeometries.set(key,geometry);
+  }
+  const mesh=new T.Mesh(bodyGeometries.get(key),material(color));mesh.position.set(0,y,z);g.add(mesh);return mesh;
+}
 function tires(g,w,z){
   return (w?[w,-w]:[0]).map(x=>{
     const m=shape(g,tire,'#282f39',x,.44,z,1,1,1);m.rotation.z=Math.PI/2;
@@ -59,8 +96,8 @@ export function makeExtraModels(w){
     if(p.family==='bus'||p.family==='taxi')return makeRoadServiceVehicle(p);
     if(p.family==='ferry')return makeFerryVariant(p.variant);
     if(p.kind==='air')return makeAircraftVariant(p);
+    if(p.kind==='boat')return makeBoatVariant(p);
     const base=p.kind==='road'?world.cars[p.chassis]?.car:
-      p.kind==='boat'?world.life.craft[p.chassis]:
       p.kind==='rail'?world.arch.train.front:null;
     if(!base)throw new Error(`Missing ${p.kind} chassis model "${p.chassis}" for vehicle "${p.model}".`);
     return base.clone(true);
@@ -68,18 +105,23 @@ export function makeExtraModels(w){
   function makeAircraftVariant(p){
     if(p.model==='fighter'){
       const g=new T.Group();
-      box(g,p.color,0,.72,0,1.22,.58,7.6);
-      shape(g,round,'#d6e5df',0,1.30,-.35,.62,.42,2.05);
-      box(g,'#263e50',0,1.35,-.82,.82,.35,1.48);
-      box(g,p.color,0,.72,.95,8.25,.16,3.65);
-      box(g,p.color,0,.75,-1.25,6.85,.13,2.15);
+      curvedBody(g,p.color,0,.43,0,1.22,.58,7.6);
+      shape(g,round,'#d6e5df',0,1.30,-.35,.58,.38,1.84);
+      box(g,'#263e50',0,1.35,-.82,.72,.30,1.24);
+      wing(g,p.color,8.25,3.65,.72,.95,.55);
+      wing(g,p.color,6.85,2.15,.75,-1.25,.18);
+      const nose=new T.Mesh(new T.ConeGeometry(.52,1.45,24,2),material(p.color));
+      nose.rotation.x=-Math.PI/2;nose.position.set(0,.72,-3.85);g.add(nose);
       for(const x of [-1,1]){
-        box(g,p.color,x*1.48,.78,-.45,1.42,.24,4.25).rotation.y=-x*.12;
-        box(g,p.color,x*1.22,1.55,-2.15,.16,1.52,.82).rotation.z=x*.28;
-        box(g,p.color,x*.62,.63,-3.58,.38,.38,.72);
-        box(g,'#ff9a48',x*.62,.63,-4.02,.48,.48,.20).name='afterburner';
+        const finShape=new T.Shape();finShape.moveTo(-.56,0);finShape.lineTo(.42,0);finShape.lineTo(.12,1.18);finShape.lineTo(-.28,1.42);finShape.closePath();
+        const finGeometry=new T.ExtrudeGeometry(finShape,{depth:.13,bevelEnabled:true,bevelSegments:2,bevelThickness:.035,bevelSize:.04});
+        finGeometry.translate(0,0,-.065);
+        const fin=new T.Mesh(finGeometry,material(p.color));fin.position.set(x*1.05,.74,2.1);fin.rotation.z=x*.20;g.add(fin);
+        const nozzle=new T.Mesh(new T.CylinderGeometry(.28,.39,.62,24,1,true),material('#344754'));
+        nozzle.rotation.x=Math.PI/2;nozzle.position.set(x*.4,.65,3.72);g.add(nozzle);
+        const afterburner=new T.Mesh(new T.CylinderGeometry(.20,.27,.12,24),material('#ff9a48'));
+        afterburner.rotation.x=Math.PI/2;afterburner.position.set(x*.4,.65,4.08);afterburner.name='afterburner';g.add(afterburner);
       }
-      box(g,p.color,0,1.02,-3.15,.44,.42,1.05);
       g.userData.propellers=[];
       return g;
     }
@@ -98,7 +140,7 @@ export function makeExtraModels(w){
       return g;
     }
     const wingChord=p.family==='plane'&&p.model==='sprintjet'?2.35:p.family==='plane'?2.0:1.75;
-    const wing=box(g,'#b7c8ce',0,1.08,.28,span,.16,wingChord);
+    const wingMesh=wing(g,'#b7c8ce',span,wingChord,1.08,.28,p.model==='sprintjet'?.48:.12);
     if(p.model==='sprintjet'){
       for(const x of [-1,1]){
         box(g,p.color,x*span*.25,1.07,.69,span*.48,.15,wingChord*.9).rotation.y=x*.20;
@@ -135,8 +177,44 @@ export function makeExtraModels(w){
     }
     if(p.model==='skipper')box(g,'#d6a77f',0,.35,fuselage*.23,.66,.27,.5);
     if(p.model==='albatross')box(g,'#dce8e3',0,1.1,fuselage*.18,1.18,.16,2.7);
-    wing.userData.baseWing=true;
+    wingMesh.userData.baseWing=true;
     g.userData.propellers=propellers;
+    return g;
+  }
+  function makeBoatVariant(p){
+    const g=new T.Group(),sub=p.chassis==='sub',yacht=p.chassis==='yacht',
+      length=sub?4.7:yacht?9.8:5.8,width=sub?1.55:yacht?3.5:2.45,color=p.color;
+    shape(g,round,color,0,.28,.05,width*.49,.34,length*.49);
+    shape(g,round,sub?'#a9d8d5':'#e6ddc9',0,.56,-.1,width*.39,.09,length*.41);
+    if(sub){
+      shape(g,round,'#537d8d',0,.89,-.42,.51,.46,1.05);
+      box(g,color,0,1.31,.42,.19,.73,.46);
+      for(const side of [-1,1]){
+        box(g,color,side*.73,.30,.55,.49,.15,1.1);
+        const porthole=new T.Mesh(new T.TorusGeometry(.20,.045,8,20),material('#cedbd3'));
+        porthole.position.set(side*.67,.62,-1.15);porthole.rotation.y=Math.PI/2;g.add(porthole);
+      }
+    }else{
+      const cabinLength=yacht?4.7:2.45,cabinHeight=yacht?2.45:1.55;
+      curvedBody(g,yacht?'#e7e2d4':'#e4ece4',0,.58,-.38,yacht?2.7:1.58,cabinHeight,cabinLength);
+      shape(g,round,'#355569',0,1.12,-.55,yacht?1.28:.76,.49,yacht?2.5:1.25);
+      for(const side of [-1,1]){
+        for(let window=0;window<(yacht?3:2);window++)
+          shape(g,round,'#3e6d80',side*(yacht?1.36:.82),1.25,-1.5+window*(yacht?1.35:.95),.11,.34,.72);
+        box(g,'#d7c6a0',side*(width*.43),.53,.1,.12,.19,length*.68);
+      }
+      for(const x of [-.35,.35])box(g,'#74848a',x,.15,length*.42,.16,.3,.2);
+      const propeller=new T.Group();propeller.position.set(0,.15,length*.49);g.add(propeller);
+      for(let blade=0;blade<3;blade++){
+        const fin=new T.Mesh(new T.BoxGeometry(.07,.55,.09),material('#9eaaab'));
+        fin.rotation.z=blade*Math.PI/3;propeller.add(fin);
+      }
+      g.userData.propeller=propeller;
+    }
+    for(const side of [-1,1]){
+      box(g,headlightMaterial,side*width*.34,.54,-length*.47,.2,.17,.08);
+      box(g,taillightMaterial,side*width*.34,.48,length*.46,.18,.16,.07);
+    }
     return g;
   }
   function makePropeller(parent,x,y,z,color){
@@ -153,10 +231,17 @@ function makeRoadServiceVehicle(p){
   const body=isBus?'#8dc69e':'#e7c56e',glass='#b8e4d7',length=isBus?[7.2,8.5,7.7][variant]:[4.3,4.7,5.1][variant];
   if(isBus){
     const height=variant===1?2.45:2.08;
-    box(g,body,0,1.20,0,2.7,height,length);
+    curvedBody(g,body,0,.16,0,2.7,height,length);
     box(g,'#344e5b',0,1.20+height*.52,0,2.55,.16,length-.12);
     for(let z=-length*.34;z<=length*.34;z+=length*.22)for(const x of [-1.37,1.37])box(g,glass,x,1.47,z,.08,.72,1.10);
-    box(g,'#526e7b',0,1.5,-length*.5,2.34,.9,.09);
+    shape(g,round,glass,0,1.55,-length*.48,2.16,.64,.11);
+    shape(g,round,'#526e7b',0,1.48,length*.48,2.12,.62,.11);
+    for(const x of [-1,1]){
+      box(g,'#586b71',x*1.41,1.33,-length*.3,.26,.09,.48);
+      shape(g,round,glass,x*1.55,1.36,-length*.3,.18,.13,.29);
+      box(g,headlightMaterial,x*.91,.82,-length*.5-.035,.36,.25,.07);
+      box(g,taillightMaterial,x*.91,.82,length*.5+.035,.32,.24,.07);
+    }
     for(const z of [-length*.31,length*.31])for(const x of [-1.18,1.18])wheel(g,x,z);
     if(variant===1){
       box(g,'#d7c58c',0,2.82,-.12,2.22,.19,1.75);
@@ -170,13 +255,15 @@ function makeRoadServiceVehicle(p){
     }
   }else{
     const width=variant===2?2.12:1.88,height=variant===1?1.52:1.32;
-    box(g,body,0,.68,0,width,.62,length);
+    curvedBody(g,body,0,.37,0,width,.62,length);
     box(g,'#d9e2d7',0,1.22,-.13,width*.82,height*.57,length*.52);
-    box(g,'#3b5865',0,1.22,-length*.39,width*.77,.46,.07);
-    box(g,'#3b5865',0,1.22,length*.39,width*.77,.46,.07);
+    shape(g,round,'#3b5865',0,1.24,-length*.39,width*.75,.40,.09);
+    shape(g,round,'#3b5865',0,1.24,length*.39,width*.75,.40,.09);
     for(const x of [-width*.48,width*.48]){
-      box(g,'#ffe9a8',x,.72,-length*.5,.1,.23,.12);
-      box(g,'#c54f4e',x,.72,length*.5,.1,.23,.12);
+      box(g,headlightMaterial,x,.72,-length*.5-.035,.13,.23,.08);
+      box(g,taillightMaterial,x,.72,length*.5+.035,.13,.23,.08);
+      box(g,'#536a72',x*1.04,1.28,-length*.22,.24,.08,.38);
+      shape(g,round,glass,x*1.16,1.32,-length*.22,.16,.12,.24);
     }
     for(const z of [-length*.31,length*.31])for(const x of [-width*.49,width*.49])wheel(g,x,z);
     if(variant===0){
@@ -195,11 +282,21 @@ function makeRoadServiceVehicle(p){
 function wheel(g,x,z){
   const mount=new T.Group();mount.position.set(x,0,z);mount.userData.suspensionWheel={left:x<0,front:z<0,baseY:0};g.add(mount);
   const m=shape(mount,tire,'#28323b',0,.38,0,.96,.96,.96);m.rotation.z=Math.PI/2;
-  const rim=shape(mount,tire,'#9babb0',0,.38,0,.42,.42,.98);rim.rotation.z=Math.PI/2;
+  const rim=new T.Mesh(new T.CylinderGeometry(.23,.23,.28,32),material('#aab9bd'));
+  rim.rotation.z=Math.PI/2;rim.position.set(0,.38,0);mount.add(rim);
+  for(const side of [-1,1]){
+    const face=new T.Mesh(new T.TorusGeometry(.245,.035,8,28),material('#d4dcda'));
+    face.rotation.y=Math.PI/2;face.position.set(side*.16,.38,0);mount.add(face);
+    for(let spoke=0;spoke<8;spoke++){
+      const angle=spoke*Math.PI/4,bar=new T.Mesh(new T.BoxGeometry(.045,.27,.055),material('#d4dcda'));
+      bar.position.set(side*.17,.38+Math.sin(angle)*.12,Math.cos(angle)*.12);
+      bar.rotation.x=-angle;mount.add(bar);
+    }
+  }
 }
 function makeFerryVariant(variant){
   const g=new T.Group(),hullColor=['#397783','#477b84','#597987'][variant];
-  const hullAt=(x,z,w,l)=>box(g,hullColor,x,.22,z,w,.52,l);
+  const hullAt=(x,z,w,l)=>shape(g,round,hullColor,x,.22,z,w*.53,.32,l*.53);
   const deck=(x,z,w,l)=>box(g,'#e6dec9',x,.54,z,w,.12,l);
   if(variant===0){
     for(const x of [-1.8,1.8]){hullAt(x,0,1.25,10);deck(x,0,1.35,9.3)}

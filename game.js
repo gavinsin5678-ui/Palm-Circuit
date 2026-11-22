@@ -4,7 +4,7 @@ import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,ragdollPerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=articulated-physics';
 import {createSocial} from './social.js?v=connections';
 import {createMobility} from './mobility.js?v=gameplay-overhaul';
-import {makeArchipelago,regions,islandAt,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
+import {makeArchipelago,regions,islandAt,islandSurfaceY,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
 import {makeTerminal,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
 import {fleetProducts,vehicleDynamics} from './fleet.js?v=road-dynamics';
@@ -75,6 +75,14 @@ const rail=()=>isRail(state.vehicle);
 const motoring=()=>!walking()&&!flying()&&!boating()&&!rail();
 const drivable=(x,z)=>x<=15.5||!!islandAt(x,z)||highwayAt(x,z);
 const roadSurface=(x,z)=>x<=15.5&&(onStreet(x,z)||atAirfield(x,z))||isRoad(x,z);
+const surfaceY=(x,z)=>{
+  const tunnel=world?.arch.roadHeightAt(x,z);
+  if(tunnel!==undefined)return tunnel+.08;
+  const island=islandAt(x,z);
+  if(!island)return 0;
+  if(Math.abs(x-island.centerX-56)<9)return 2.15;
+  return isRoad(x,z)?2.07:islandSurfaceY(x,z);
+};
 const solidHit=(x,z,y,r)=>world?.stream.hit(x,z,y,r)||world?.arch.hit(x,z,y,r);
 const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);if(x>219)properties.push(...world.arch.properties);return {properties,people}};
 const streetPropAt=(x,z)=>world?.arch.props.find(p=>Math.hypot(p.x-x,p.z-z)<1.9);
@@ -209,7 +217,7 @@ function resetCar(loc=null){
   Object.assign(state,{x,z,heading:h,speed:0,vx:0,vz:0,hit:0,steer:0,
     suspension:[0,0,0,0],suspensionVelocity:[0,0,0,0],suspensionY:0,bodyPitch:0,bodyRoll:0,yawSpin:0,sideVelocity:0,tireSlip:0,
     footLean:0,footAcceleration:0,trafficHitCooldown:0,suspensionVehicle:state.vehicle,
-    altitude:0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
+    altitude:flying()?islandSurfaceY(x,z):0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
     crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0,waterY:waveHeight(x,z,simTime),waterVertical:0,
     vehicleHealth:vehicleMaxHealth(state.vehicle),hijackedAirliner:false,hijackTime:0,hijackBountyTick:0});
   jumpVelocity=0;
@@ -962,7 +970,7 @@ function draw(dt,now){
     const [cx,cz,cyaw]=active?[x,z,heading]:lastMount.coords;
     const handling=variant(active?state.vehicle:lastMount?.id)?.dynamics??vehicleDynamics[id]??vehicleDynamics.car;
     vehiclePaint(car,variant(active?state.vehicle:lastMount.id)?.color);
-    car.position.set(cx,.035+Math.sin(now*.018)*a+(active?roadLift+state.suspensionY:0),cz);
+    car.position.set(cx,surfaceY(cx,cz)+.035+Math.sin(now*.018)*a+(active?roadLift+state.suspensionY:0),cz);
     car.rotation.set(active?state.bodyPitch:0,-cyaw,active?state.bodyRoll+(id==='bike'?-steer*Math.min(.28,Math.abs(speed)*.019):0):0,'YXZ');
     poseSuspensionWheels(wheels,handling,active,dt,state.steer,speed);
   }
@@ -979,7 +987,7 @@ function draw(dt,now){
     const abilityOn=active&&state.ability>0;
     const steady=abilityOn&&['steady','ferry-stabilize'].includes(p.ability);
     const submerge=isWater&&p.chassis==='sub'?(active?state.depth:0):0;
-    const y=isWater?(steady?-.13:active?state.waterY:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:isRoad?active?roadLift+state.suspensionY+.035:.035:.035;
+    const y=isWater?(steady?-.13:active?state.waterY:waveHeight(vx,vz,simTime))-submerge+(abilityOn&&p.ability==='ferryfoil'?1.25:0):isAir?state.altitude+.025:isRoad?surfaceY(vx,vz)+(active?roadLift+state.suspensionY:0)+.035:.035;
     vehiclePaint(vehicle,p.color);
     vehicle.position.set(vx,y,vz);
     const wavePitch=(waveHeight(vx,vz+2,simTime)-waveHeight(vx,vz-2,simTime))*.28;
@@ -996,13 +1004,13 @@ function draw(dt,now){
   const aircraftId=parkedPlane?lastMount.id:state.vehicle, floats=modelOf(aircraftId)==='float';
   if(mesh.visible){vehiclePaint(mesh,variant(aircraftId)?.color);mesh.scale.set(aircraftId==='thermal'?1.28:aircraftId==='sprintjet'?.86:1,1,aircraftId==='trimotor'?1.25:1)}
   for(const o of world.extras.floats.values())o.visible=floats;
-  if(parkedPlane)mesh.position.set(lastMount.coords[0],.025,lastMount.coords[1]);
+  if(parkedPlane)mesh.position.set(lastMount.coords[0],surfaceY(lastMount.coords[0],lastMount.coords[1])+.025,lastMount.coords[1]);
   else mesh.position.set(x,alt+.025,z);
   mesh.rotation.set(state.pitch,-(parkedPlane?lastMount.coords[2]:heading),-state.bank,'YXZ');
   prop.rotation.z+=dt*(3+state.throttle*73);
   const {life}=world,t=simTime;
   const pier=walking()&&!indoor?dockHeight(x,z):null;
-  const footY=state.swimming?waveHeight(x,z,t)-.61:(pier??.065)+state.jump;
+  const footY=state.swimming?waveHeight(x,z,t)-.61:(pier??surfaceY(x,z)+.065)+state.jump;
   const pedestrian=indoor?.player??life.player;
   life.player.model.visible=walking()&&!indoor&&state.camera!==1&&!ride;
   if(walking()&&!ride){
@@ -1041,7 +1049,7 @@ function draw(dt,now){
   world.playerShadow.visible=!ride&&!rail()&&state.camera!==1&&!boating()&&!state.swimming&&!indoor&&state.phase!=='crashed'&&(!flying()||alt<15);
   world.playerShadow.scale.set(flying()?8.6:walking()?1.65:4.1,1,flying()?7.7:walking()?1.9:6.6);
   world.playerShadow.material.opacity=flying()?minmax(1-alt/15,0,1):1;
-  world.playerShadow.position.x=x;world.playerShadow.position.z=z+.22;world.playerShadow.rotation.y=-heading;
+  world.playerShadow.position.x=x;world.playerShadow.position.y=.085+surfaceY(x,z);world.playerShadow.position.z=z+.22;world.playerShadow.rotation.y=-heading;
   const mobile=viewport.clientWidth<540;
   if(inCab&&(ride||rail()||flying()||boating())){
     const rideY=ride?.pose?.y, base=rideY??(rail()?state.railY:boating()?(ability('steady')||ability('ferry-stabilize')?-.13:state.waterY)+(state.vehicle==='hydro'&&state.ability>0?3.3:0)-state.depth:alt);
@@ -1092,10 +1100,10 @@ function draw(dt,now){
     lookAt.set(x+sin*35,alt+2.12+state.pitch*28,z-cos*35);
   }else if(flying()){
     cameraTarget.set(x-sin*25,alt+53,z+cos*25);lookAt.set(x+sin*16,alt-10,z-cos*16);
-  }else if(state.camera===0){const back=mobile?11.6:9.65;
-    cameraTarget.set(x-sin*back+cos*.9,4.65+Math.abs(speed)*.024,z+cos*back+sin*.9);lookAt.set(x+sin*13,2.07,z-cos*13);
-  }else if(state.camera===1){cameraTarget.set(x+sin*.95,1.61,z-cos*.95);lookAt.set(x+sin*28,2.3,z-cos*28)}
-  else {cameraTarget.set(x-sin*8,26,z+cos*8);lookAt.set(x+sin*3,0,z-cos*3)}
+  }else if(state.camera===0){const back=mobile?11.6:9.65,ground=surfaceY(x,z);
+    cameraTarget.set(x-sin*back+cos*.9,ground+4.65+Math.abs(speed)*.024,z+cos*back+sin*.9);lookAt.set(x+sin*13,ground+2.07,z-cos*13);
+  }else if(state.camera===1){const ground=surfaceY(x,z);cameraTarget.set(x+sin*.95,ground+1.61,z-cos*.95);lookAt.set(x+sin*28,ground+2.3,z-cos*28)}
+  else {const ground=surfaceY(x,z);cameraTarget.set(x-sin*8,ground+26,z+cos*8);lookAt.set(x+sin*3,ground,z-cos*3)}
   const lerp=snap||inCab||state.camera===1?1:1-Math.exp(-dt*5.7);
   camera.position.lerp(cameraTarget,lerp);currentLook.lerp(lookAt,lerp);camera.lookAt(currentLook);snap=false;
   world.cab.visible=inCab&&!passenger;
@@ -1114,7 +1122,7 @@ function draw(dt,now){
   world.ocean.material.uniforms.clock.value=t;
   const waypoint=target();world.gate.visible=!!waypoint&&state.phase==='running';
   if(world.gate.visible){
-    const [tx,tz]=waypoint;world.gate.position.set(tx,0,tz);world.gate.rotation.y=Math.atan2(camera.position.x-tx,camera.position.z-tz);
+    const [tx,tz]=waypoint;world.gate.position.set(tx,surfaceY(tx,tz),tz);world.gate.rotation.y=Math.atan2(camera.position.x-tx,camera.position.z-tz);
     world.beacon.position.y=7.15+(prefersReduced?0:Math.sin(now*.003)*.34);world.beacon.rotation.y=now*.0012;
     world.ring.material.color.set(state.mode==='delivery'?'#ffc78c':'#85f8d3');
     world.circle.material.color.copy(world.ring.material.color);
@@ -1293,7 +1301,7 @@ try{
   renderer.setClearColor('#625872');renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
   renderer.domElement.tabIndex=0;renderer.domElement.setAttribute('aria-label','Pacifica Bay 3D game canvas');$('world').append(renderer.domElement);
-  world=createWorld();world.arch=makeArchipelago(world.scene);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
+  world=createWorld();world.arch=makeArchipelago(world.scene,world.roadSurfaceMaterial);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
   for(const {car} of Object.values(world.cars))enableDirectionalShadow(car);
   for(const traffic of world.traffic)enableDirectionalShadow(traffic.mesh);
   enableDirectionalShadow(world.life.player.model,true);

@@ -1,4 +1,4 @@
-import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt} from './metro-world.js?v=gameplay-overhaul';
+import {regions,regionAt,stops,stopById,stopTypes,railAt,railStop,railSector,signals,signalAt,solidLand,highwayAt,runways,islandSurfaceY,roadHeightAt} from './metro-world.js?v=gameplay-overhaul';
 import {createSportsMatch,sportModes} from './sports.js?v=gameplay-overhaul';
 import {animatePerson} from './life-world.js?v=articulated-physics';
 import {hasVenue,venueFor} from './terminal-world.js?v=gameplay-overhaul';
@@ -56,14 +56,34 @@ function path(pts){
   };
 }
 function roadPath(s,d,scenic){
-  const [sa,da]=[s,d].map(q=>q.region==='main'?[clamp(Math.round(q.x/48)*48+3.5,-191,3.5),Math.round(q.z/48)*48+3.5]:[316.4,byRegion(q.region).z+3.5]);
+  const roadway=points=>points.map(([x,z])=>{
+    const tunnel=roadHeightAt(x,z);
+    if(tunnel!==undefined)return [x,z,tunnel+.08];
+    const region=regions.find(item=>item.id!=='main'&&Math.abs(x-item.centerX)<=100&&Math.abs(z-item.z)<=92);
+    if(!region)return [x,z,.12];
+    return [x,z,(Math.abs(x-region.centerX-56)<9?2.15:islandSurfaceY(x,z))+.17];
+  });
+  const [sa,da]=[s,d].map(q=>q.region==='main'?[clamp(Math.round(q.x/48)*48+3.5,-191,3.5),Math.round(q.z/48)*48+3.5]:
+    [byRegion(q.region).centerX+3.5,byRegion(q.region).z+3.5]);
   const [sx,sz]=sa,[dx,dz]=da;
   if(s.region===d.region){
-    const stroll=s.region==='main'?[[sx-48,sz],[sx-48,dz]]:[[sx,byRegion(s.region).z+40.5],[365,byRegion(s.region).z+40.5],[365,byRegion(s.region).z+3.5]];
-    return [[s.x,s.z],[sx,s.z],[sx,sz],...(scenic?stroll:[]),[sx,dz],[dx,dz],[dx,d.z],[d.x,d.z]].map(([x,z])=>[x,z,.12]);
+    const region=byRegion(s.region),stroll=s.region==='main'?[[sx-48,sz],[sx-48,dz]]:
+      [[region.centerX-40,sz],[region.centerX-40,dz],[region.centerX,dz]];
+    return roadway([[s.x,s.z],[sx,s.z],[sx,sz],...(scenic?stroll:[]),[sx,dz],[dx,dz],[dx,d.z],[d.x,d.z]]);
   }
-  const join=[[3.5,99.4],[311,99.4]],bridge=s.region==='main'?join:d.region==='main'?[...join].reverse():[];
-  return [[s.x,s.z],[sx,s.z],[sx,sz],...bridge,[dx,dz],[dx,d.z],[d.x,d.z]].map(([x,z])=>[x,z,.12]);
+  const regionPoint=region=>region==='main'?{x:3.5,z:99.4}:{x:byRegion(region).centerX+3.5,z:byRegion(region).z+3.5};
+  const toSpine=region=>{
+    if(region==='main')return [[3.5,99.4],[311,99.4]];
+    const island=byRegion(region),z=island.z+3.5;
+    return island.centerX>313
+      ?[[island.centerX-40,z],[480,z],[388,z],[311,z]]
+      :[[island.centerX+3.5,z],[311,z]];
+  };
+  const sourcePoint=regionPoint(s.region),destPoint=regionPoint(d.region),
+    sourceSpine=toSpine(s.region),destSpine=toSpine(d.region).reverse(),
+    centerLink=[[311,sourcePoint.z],[311,destPoint.z]];
+  return roadway([[s.x,s.z],[sx,s.z],[sx,sz],...sourceSpine,...centerLink.slice(1),...destSpine.slice(1),
+    [dx,dz],[dx,d.z],[d.x,d.z]]);
 }
 function ferryPath(s,d,scenic){
   const lane=223,sea=.18,under=-4.5;
@@ -90,8 +110,9 @@ function ferryPath(s,d,scenic){
   return points;
 }
 function flightPath(s,d){
-  const r=q=>q.region==='main'?-195:369;
-  const start=[r(s),s.z-5,0],end=[r(d),d.z-5,0],farS=[start[0],start[1]-103,26],farD=[end[0],end[1]-74,20];
+  const r=q=>q.region==='main'?-195:runways.find(runway=>runway.id===q.region)?.x??byRegion(q.region).centerX+56;
+  const start=[r(s),s.z-5,islandSurfaceY(r(s),s.z)],end=[r(d),d.z-5,islandSurfaceY(r(d),d.z)],
+    farS=[start[0],start[1]-103,start[2]+26],farD=[end[0],end[1]-74,end[2]+20];
   return [start,[start[0],start[1]-32,0],farS,[(start[0]+end[0])/2,(start[1]+end[1])/2-31,83],farD,[end[0],end[1]-39,0],end];
 }
 function buildRide(s,d,paid,cls,line,pack){
@@ -634,8 +655,9 @@ export function createMobility(api){
       else if(highwayAt(px,pz)){sirenX=316.2;sirenZ=clamp(pz+(pz>505?-24:24),-120,528)}
       else{
         const zone=regionAt(px,pz);
-        if(Math.abs(px-313)<Math.abs(pz-zone.z)){sirenX=316.2;sirenZ=clamp(pz+(pz>zone.z? -24:24),zone.z-62,zone.z+62)}
-        else{sirenX=clamp(px+(px>312?-24:24),242,382);sirenZ=zone.z+3.2}
+        const centerX=zone.centerX??313;
+        if(Math.abs(px-centerX)<Math.abs(pz-zone.z)){sirenX=centerX+3.2;sirenZ=clamp(pz+(pz>zone.z?-24:24),zone.z-82,zone.z+82)}
+        else{sirenX=clamp(px+(px>centerX?-24:24),centerX-82,centerX+82);sirenZ=zone.z+3.2}
       }
       w.patrol.visible=true;
     }

@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {person} from './life-world.js?v=articulated-physics';
-import {createTerrainPatch,addIslandForest} from './world.js?v=surface-detail';
+import {createTerrainPatch,addIslandForest,addOrthogonalRoadGrid} from './world.js?v=surface-detail';
 
 export const islands=[
   {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',centerX:313,z:96,ground:'#c89959',rim:'#e9c084',road:'#675652',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},
@@ -239,9 +239,7 @@ function batch(group){
   }
 }
 function makeInfrastructure(g,solids,asphaltMaterial){
-  const asphalt='#4f555b';
-  const paving=asphaltMaterial?.clone()??mat('#424952');
-  paving.color.set('#59616b');paving.roughness=.91;paving.metalness=.02;
+  const paving=asphaltMaterial??mat('#424952');
   const runwayMark=mat('#e4e0d2',true),laneMark=mat('#ded1a4',true),curb=mat('#abb0a8'),
     light=mat('#fff0c1',true),buildingPalette={
       dune:['#b77a52','#d0a272','#c78e61'],jungle:['#6e6752','#887b5c','#a48b69'],
@@ -344,80 +342,23 @@ function makeInfrastructure(g,solids,asphaltMaterial){
   for(const i of islands){
     const cx=i.centerX,z=i.z,terrainType=i.id==='snow'?'alpine':i.id,
       city=new T.Group(),solidStart=solids.length,
-      runway=runways.find(item=>item.id===i.id),runwayX=runway.x,runwayZ=z,
-      runwayClear=(x,zz)=>Math.abs(x-runwayX)<10&&Math.abs(zz-runwayZ)<58;
+      runway=runways.find(item=>item.id===i.id),runwayX=runway.x,runwayZ=z;
     city.position.y=1.9;g.add(city);
     createTerrainPatch(city,cx,z,200,188,64,60,`island-${terrainType}`,-1.9,cx,z);
-    for(let n=-9;n<=9;n++){
-      const offset=n*10;
-      roadBox(city,cx-98,-1.03,z+offset,1.1,1.72,9.7,mat('#858b85'));
-      roadBox(city,cx+98,-1.03,z+offset,1.1,1.72,9.7,mat('#858b85'));
-      roadBox(city,cx+offset,-1.03,z-90,9.7,1.72,1.1,mat('#858b85'));
-      roadBox(city,cx+offset,-1.03,z+90,9.7,1.72,1.1,mat('#858b85'));
-    }
-    for(const offset of [-80,-40,0,40,80]){
-      if(offset===0){
-        const spine=i.centerX===313?[[-72,2],[-60,2],[60,2],[72,2]]:[[-74,2],[74,2]];
-        for(let segment=1;segment<spine.length;segment++){
-          const [aOffset,aY]=spine[segment-1],[bOffset,bY]=spine[segment],
-            a=[cx,aY,z+aOffset],b=[cx,bY,z+bOffset];
-          roadBeam(city,a,b,14,.18,paving,'z',0,1.9);
-          for(const side of [-1,1]){
-            roadBeam(city,[cx,aY+.035,z+aOffset],[cx,bY+.035,z+bOffset],.14,.035,laneMark,'z',side*.16,1.9);
-            roadBeam(city,[cx+side*7.9,aY+.12,z+aOffset],[cx+side*7.9,bY+.12,z+bOffset],1.65,.24,curb,'z',0,1.9);
-            roadBeam(city,[cx+side*7.05,aY+.2,z+aOffset],[cx+side*7.05,bY+.2,z+bOffset],.18,.035,runwayMark,'z',0,1.9);
-          }
-        }
-        for(let n=-70;n<=70;n+=9)for(const side of [-1,1]){
-          const y=roadHeightAt(cx+side*2.7,z+n)??2.0;
-          roadBeam(city,[cx+side*2.7,y+.035,z+n-1.9],[cx+side*2.7,y+.035,z+n+1.9],.14,.035,runwayMark,'z',0,1.9);
-        }
-      }else{
-        roadBox(city,cx+offset,.01,z,14,.18,148,paving);
-        for(const side of [-1,1]){
-          roadBox(city,cx+offset+side*7.9,.12,z,1.65,.24,148,curb);
-          roadBox(city,cx+offset+side*7.05,.04,z,.18,.035,148,runwayMark);
-        }
-        for(let n=-70;n<=70;n+=9)for(const side of [-1,1])
-          roadBox(city,cx+offset+side*2.7,.14,z+n,.14,.035,3.8,runwayMark);
-        roadBox(city,cx+offset-.14,.04,z,.12,.035,146,laneMark);
-        roadBox(city,cx+offset+.14,.04,z,.12,.035,146,laneMark);
-      }
-    }
-    for(const offset of [-72,-36,0,36,72]){
-      const spans=Math.abs(offset)<58
-        ?[[cx-82,runwayX-10],[runwayX+10,cx+82]]
-        :[[cx-82,cx+82]];
-      for(const [start,end] of spans){
-        const segments=offset===0&&z===96&&start<235&&end>213
-          ?[[start,213],[235,end]].filter(([a,b])=>b-a>.01):[[start,end]];
-        for(const [segmentStart,segmentEnd] of segments){
-          const center=(segmentStart+segmentEnd)*.5,width=segmentEnd-segmentStart;
-          roadBox(city,center,.01,z+offset,width,.18,13.2,paving);
-          for(const side of [-1,1]){
-            roadBox(city,center,.12,z+offset+side*7.55,width,.24,1.6,curb);
-            roadBox(city,center,.04,z+offset+side*6.8,width,.035,.18,runwayMark);
-          }
-          for(let n=Math.ceil((segmentStart-cx)/9)*9;n<=segmentEnd-cx;n+=9)for(const side of [-1,1])
-            if(!runwayClear(cx+n,z+offset+side*2.6))
-              roadBox(city,cx+n,.19,z+offset+side*2.6,3.8,.035,.14,runwayMark);
-          roadBox(city,center,.04,z+offset-.14,width,.035,.12,laneMark);
-          roadBox(city,center,.04,z+offset+.14,width,.035,.12,laneMark);
-        }
-      }
-    }
-    for(const xOffset of [-80,-40,0,40,80])for(const zOffset of [-72,-36,0,36,72]){
-      for(let stripe=-4;stripe<=4;stripe++)
-        if(!runwayClear(cx+xOffset+stripe*1.35,z+zOffset+9))
-          roadBox(city,cx+xOffset+stripe*1.35,.10,z+zOffset+9,.72,.035,3.4,runwayMark);
-      if(!runwayClear(cx+xOffset,z+zOffset))roadBox(city,cx+xOffset,.25,z+zOffset,2.6,.035,2.6,curb);
-    }
-    for(const xOffset of [-80,-40,0,40,80])for(let zz=-66;zz<=66;zz+=33)for(const side of [-1,1]){
-      const x=cx+xOffset+side*10.2,zzw=z+zz;
-      if(runwayClear(x,zzw))continue;
-      const pole=new T.Mesh(tubeGeo,mat('#64716d'));pole.position.set(x,3.1,zzw);pole.scale.set(.12,6.2,.12);city.add(pole);
-      roadBox(city,x,6.3,zzw,1.35,.12,.16,light);
-    }
+    const islandRunwayExclusion={minX:runwayX-9,maxX:runwayX+9,minZ:runwayZ-58,maxZ:runwayZ+58},
+      bridgeLampExclusions=i.centerX===313?[
+        {minX:cx-15,maxX:cx+15,minZ:z+64,maxZ:z+100},
+        {minX:cx-15,maxX:cx+15,minZ:z-100,maxZ:z-64}
+      ]:[];
+    addOrthogonalRoadGrid(city,{
+      xLines:[-80,-40,0,40,80].map(offset=>cx+offset),
+      zLines:[-72,-36,0,36,72].map(offset=>z+offset),
+      minX:cx-82,maxX:cx+82,minZ:z-82,maxZ:z+82,
+      xLineRange:x=>[z-(i.centerX===313&&Math.abs(x-cx)<.1?72:74),
+        z+(i.centerX===313&&Math.abs(x-cx)<.1?72:74)],
+      roadMaterial:paving,roadY:.1,xRoadWidth:14.8,zRoadWidth:13.2,
+      exclusions:[islandRunwayExclusion],streetlights:true,lampExclusions:[islandRunwayExclusion,...bridgeLampExclusions]
+    });
     const develop=(x,zz,n)=>{
       const height=(i.id==='future'||i.id==='obsidian'?24:12)+(n*11%21),
         width=10+(n%3)*2.4,depth=10+((n+1)%3)*2.1,

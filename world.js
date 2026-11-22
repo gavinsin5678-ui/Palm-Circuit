@@ -21,7 +21,6 @@ export function districtFor(x,z){
     ['Westhaven','Verde Heights','Sierra Vista','Cypress Point','Paloma Park','Juniper Hills'];
   return [`DISTRICT ${Math.abs(i-1)} W · ${Math.abs(j-1)} ${j>1?'S':'N'}`,places[n]];
 }
-const asphalt = '#404753', sidewalk = '#aab1a5';
 const baseGeo = new T.BoxGeometry(), cylinder = new T.CylinderGeometry(.75,1,1,8), sphere = new T.IcosahedronGeometry(1,1);
 const treeTrunk = new T.CylinderGeometry(.13,.25,1,9,4), canopy = new T.SphereGeometry(1,12,9);
 const roadGeo = new T.PlaneGeometry(1,1); roadGeo.rotateX(-Math.PI/2);
@@ -287,6 +286,129 @@ function roadMaterial(){
   const detail=detailMap(317,7),material=mat('#ffffff',{map:texture,roughness:.92,roughnessMap:detail,bumpMap:detail,bumpScale:.012});
   material.userData.receiveShadow=true;return material;
 }
+const gridRoadGeometry=new T.BoxGeometry();
+let gridRoadMaterials;
+function roadGridMaterials(){
+  if(!gridRoadMaterials)gridRoadMaterials={
+    curb:concreteMaterial??mat('#aab1a5',{roughness:.92}),sidewalk:concreteMaterial??mat('#aab1a5',{roughness:.92}),
+    yellow:raw('#e8bb74'),white:raw('#d8ded8'),lamp:metalMaterial??mat('#596878',{metalness:.64,roughness:.4}),
+    glow:raw('#ffe4a5')
+  };
+  return gridRoadMaterials;
+}
+export function addOrthogonalRoadGrid(parent,{
+  xLines,zLines,minX,maxX,minZ,maxZ,roadMaterial:asphaltMaterial,roadY=.01,
+  xRoadWidth=14.8,zRoadWidth=13.2,exclusions=[],xLineRange,zLineRange,streetlights=false,
+  lampExclusions=[]
+}){
+  if(!asphaltMaterial)throw new Error('A shared asphalt material is required for the road grid.');
+  const materials=roadGridMaterials(),parts=new Map();
+  const add=(type,x,y,z,w,h,d,material,rotation=0)=>{
+    if(!parts.has(type))parts.set(type,{material,items:[]});
+    parts.get(type).items.push([x,y,z,w,h,d,rotation]);
+  };
+  const outside=(x,z,rectangles)=>rectangles.some(r=>x>=r.minX&&x<=r.maxX&&z>=r.minZ&&z<=r.maxZ);
+  const segments=(axis,line,start,end,roadWidth)=>{
+    const cutouts=exclusions.filter(r=>axis==='x'
+      ?line>=r.minX-roadWidth*.5&&line<=r.maxX+roadWidth*.5
+      :line>=r.minZ-roadWidth*.5&&line<=r.maxZ+roadWidth*.5)
+      .map(r=>axis==='x'?[r.minZ-roadWidth*.5,r.maxZ+roadWidth*.5]:[r.minX-roadWidth*.5,r.maxX+roadWidth*.5])
+      .filter(([a,b])=>b>start&&a<end).sort((a,b)=>a[0]-b[0]);
+    const ranges=[];let cursor=start;
+    for(const [a,b] of cutouts){
+      if(a>cursor)ranges.push([cursor,Math.min(a,end)]);
+      cursor=Math.max(cursor,b);
+    }
+    if(cursor<end)ranges.push([cursor,end]);
+    return ranges.filter(([a,b])=>b-a>.1);
+  };
+  const roadLines=[];
+  const addRoad=(axis,line,start,end,width)=>{
+    const half=width*.5,range=segments(axis,line,start,end,width);
+    roadLines.push({axis,line,start,end,width});
+    for(const [a,b] of range){
+      const length=b-a,center=(a+b)*.5;
+      add('asphalt',axis==='x'?line:center,roadY-.09,axis==='x'?center:line,
+        axis==='x'?width:length,.18,axis==='x'?length:width,asphaltMaterial);
+      for(const side of [-1,1]){
+        add('curb',axis==='x'?line+side*(half+.12):center,roadY-.015,
+          axis==='x'?center:line+side*(half+.12),axis==='x'?.24:length,.13,axis==='x'?length:.24,materials.curb);
+        add('sidewalk',axis==='x'?line+side*(half+1.02):center,roadY-.015,
+          axis==='x'?center:line+side*(half+1.02),axis==='x'?1.56:length,.09,axis==='x'?length:1.56,materials.sidewalk);
+      }
+      const dashed=(lateral,color,width,dash,gap)=>{
+        const pitch=dash+gap;
+        for(let p=Math.ceil(a/pitch)*pitch;p+dash<=b;p+=pitch){
+          const middle=p+dash*.5;
+          add(color,axis==='x'?line+lateral:middle,roadY+.019,axis==='x'?middle:line+lateral,
+            axis==='x'?width:dash,.035,axis==='x'?dash:width,color==='yellow'?materials.yellow:materials.white);
+        }
+      };
+      for(const side of [-1,1]){
+        add('yellow',axis==='x'?line+side*.18:center,roadY+.019,axis==='x'?center:line+side*.18,
+          axis==='x'?.13:length,.035,axis==='x'?length:.13,materials.yellow);
+        dashed(side*3.35,'white',.12,3.2,4.8);
+      }
+    }
+  };
+  for(const x of xLines){
+    const [a,b]=xLineRange?.(x)??[minZ,maxZ];
+    addRoad('x',x,Math.max(a,minZ),Math.min(b,maxZ),xRoadWidth);
+  }
+  for(const z of zLines){
+    const [a,b]=zLineRange?.(z)??[minX,maxX];
+    addRoad('z',z,Math.max(a,minX),Math.min(b,maxX),zRoadWidth);
+  }
+  for(const x of xLines)for(const z of zLines){
+    if(outside(x,z,exclusions))continue;
+    const clear=(cx,cz,halfX,halfZ)=>!exclusions.some(r=>
+      cx+halfX>=r.minX&&cx-halfX<=r.maxX&&cz+halfZ>=r.minZ&&cz-halfZ<=r.maxZ);
+    for(let stripe=-4;stripe<=4;stripe++){
+      const xCross=x+stripe*.92,zCross=z+stripe*.92;
+      for(const crossZ of [z-zRoadWidth*.5-1.1,z+zRoadWidth*.5+1.1])
+        if(clear(xCross,crossZ,.31,1.3))add('crosswalk',xCross,roadY+.02,crossZ,.62,.035,2.6,materials.white);
+      for(const crossX of [x-xRoadWidth*.5-1.1,x+xRoadWidth*.5+1.1])
+        if(clear(crossX,zCross,1.3,.31))add('crosswalk',crossX,roadY+.02,zCross,2.6,.035,.62,materials.white);
+    }
+  }
+  if(streetlights){
+    const polePositions=[],intersectionClear=(x,z)=>!xLines.some(ix=>
+      Math.abs(x-ix)<xRoadWidth*.5+2.5&&zLines.some(iz=>Math.abs(z-iz)<zRoadWidth*.5+2.5));
+    const place=(x,z,axis,side)=>{
+      if(outside(x,z,lampExclusions)||!intersectionClear(x,z))return;
+      const armX=axis==='x'?-side:0,armZ=axis==='z'?-side:0,y=3.1;
+      polePositions.push([x,y,z,axis,armX,armZ]);
+    };
+    for(const x of xLines)for(const side of [-1,1]){
+      const curbX=x+side*(xRoadWidth*.5+.65);
+      for(let i=1;i<zLines.length;i++)place(curbX,(zLines[i-1]+zLines[i])*.5,'x',side);
+    }
+    for(const z of zLines)for(const side of [-1,1]){
+      const curbZ=z+side*(zRoadWidth*.5+.65);
+      for(let i=1;i<xLines.length;i++)place((xLines[i-1]+xLines[i])*.5,curbZ,'z',side);
+    }
+    for(const [x,y,z,axis,armX,armZ] of polePositions){
+      const armLength=.7;
+      add('lampPole',x,y,z,.14,6.2,.14,materials.lamp);
+      add('lampArm',x+armX*armLength*.5,y+2.72,z+armZ*armLength*.5,
+        axis==='x'?armLength:.14,.13,axis==='x'?.14:armLength,materials.lamp);
+      add('lampHead',x+armX*armLength,y+2.68,z+armZ*armLength,
+        axis==='x'?.24:.48,.12,axis==='x'?.48:.24,materials.glow);
+    }
+  }
+  for(const [type,{material,items}] of parts){
+    const mesh=new T.InstancedMesh(gridRoadGeometry,material,items.length);
+    mesh.name=`Pacifica grid ${type}`;
+    if(type==='lampPole'||type==='lampArm'||type==='lampHead')
+      mesh.userData.roadGridStreetlights=true;
+    items.forEach(([x,y,z,w,h,d,rotation],index)=>{
+      dummy.position.set(x,y,z);dummy.rotation.set(0,rotation,0);dummy.scale.set(w,h,d);dummy.updateMatrix();
+      mesh.setMatrixAt(index,dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();parent.add(mesh);
+  }
+  return roadLines;
+}
 function shadow(scene){
   const c=document.createElement('canvas');c.width=c.height=64;
   const ctx=c.getContext('2d');const gradient=ctx.createRadialGradient(32,32,5,32,32,32);
@@ -367,7 +489,11 @@ export function addIslandForest(parent,placements,biome){
   trunkMesh.receiveShadow=leafMesh.receiveShadow=true;
   parent.add(trunkMesh,leafMesh);
 }
-function lamps(x,z,right){
+function lamps(x,z,right,roadXs=roadsX,roadZs=roadsZ,xRoadWidth=14.8,zRoadWidth=13.2){
+  if(roadXs.some(line=>Math.abs(x-line)<xRoadWidth*.5)||
+     roadZs.some(line=>Math.abs(z-line)<zRoadWidth*.5)||
+     roadXs.some(line=>Math.abs(x-line)<xRoadWidth*.5+2.5)&&
+       roadZs.some(line=>Math.abs(z-line)<zRoadWidth*.5+2.5))return;
   const d=right?-1:1;
   box(x,2.85,z,.16,5.7,.16,'#596878',metalMaterial);
   box(x+d*.58,5.62,z,1.28,.13,.16,'#596878',metalMaterial);
@@ -622,24 +748,17 @@ function makeTile(i,j,paving){
     box(40.35,.34,72,.50,.55,144,'#aca395');
     for(let z=4;z<143;z+=8.6)if(![24,72,120].some(p=>Math.abs(p-z)<8)){
       palm(34.5,z,.78+rand()*.34,ox,oz);
-      if(rand()>.34)lamps(33,z,true);
-    }
-  }
-  const vertical=coast?[24]:[24,72,120];
-  for(const u of vertical){
-    if(airport&&u===120)continue;
-    plane(u,.010,72,14.8,144,asphalt,paving);
-    for(const off of [-8,8])plane(u+off,.027,72,.7,144,sidewalk,concreteMaterial);
-    for(let z=1.5;z<144;z+=4.8)if(![24,72,120].some(k=>Math.abs(k-z)<8)){
-      plane(u-.22,.049,z,.13,2.45,'#e8bb74');plane(u+.22,.049,z,.13,2.45,'#e8bb74');
+      if(rand()>.34)lamps(33.65,z,true,[24],[24,72,120]);
     }
   }
   const end=coast?36.5:airport?99:144;
-  for(const z of [24,72,120]){
-    plane(end/2,.012,z,end,13.2,asphalt,paving);
-    for(let x=2;x<end;x+=4.8)if(!vertical.some(k=>Math.abs(k-x)<8))plane(x,.047,z,2.55,.13,'#e8bb74');
-    for(const x of vertical)if(x<end)for(const dir of [-1,1])for(let k=-4;k<=4;k++)plane(x+k*1.31,.048,z+dir*7.3,.75,.93,'#bdc1bd');
-  }
+  const vertical=coast?[24]:airport?[24,72]:[24,72,120],
+    cutouts=airport?[runway,runwayWest].map(r=>({
+      minX:r.x-r.width*.5-ox,maxX:r.x+r.width*.5-ox,
+      minZ:r.north-oz,maxZ:r.south-oz
+    })):[];
+  addOrthogonalRoadGrid(group,{xLines:vertical,zLines:[24,72,120],minX:0,maxX:end,minZ:0,maxZ:144,
+    roadMaterial:paving,roadY:.01,xRoadWidth:14.8,zRoadWidth:13.2,exclusions:cutouts});
   const lots=coast?[9]:[6,39,57,87,104,137];
   for(const x of lots)for(const z of [7,40,57,87,103,136]){
     if(airport&&x>66)continue;
@@ -786,27 +905,8 @@ export function createWorld({lowSpec=false}={}){
   plane(20,-.036,-24,21,288,'#c9ad84');
   plane(13,.075,-24,5.4,288,'#a3a49b');
   const paving=roadMaterial();
-  for(const x of roadsX){
-    plane(x,.01,-24,14.8,288,asphalt,paving);
-    for(const off of [-8,8]) {
-      plane(x+off,.045,-24,1.19,288,sidewalk,concreteMaterial);
-      box(x+off*.91,.09,-24,.19,.16,288,'#888f87',concreteMaterial);
-      plane(x+off*.82,.038,-24,.16,288,'#dee3d5',metalMaterial);
-    }
-    for(let z=-164;z<119;z+=4.8) if(!roadsZ.some(zz=>Math.abs(z-zz)<9)){
-      plane(x-.22,.047,z,.13,2.45,'#e8bb74');plane(x+.22,.047,z,.13,2.45,'#e8bb74');
-    }
-  }
-  for(const z of roadsZ){
-    plane(-77.75,.013,z,180.5,13.2,asphalt,paving);
-    for(let x=-151;x<11;x+=4.8) if(!roadsX.some(xx=>Math.abs(x-xx)<9)) plane(x,.047,z,.0+2.6,.12,'#e8bb74');
-    for(const x of roadsX) for(const direction of [-1,1]) for(let i=-5;i<=5;i++) {
-      plane(x+i*1.14,.049,z+direction*7.6,.59,1.17,'#bdc1bd');
-      if(x!==0||direction<0)plane(x+direction*8.25,.05,z+i,1.1,.54,'#bdc1bd');
-    }
-  }
-  for(const x of roadsX)for(const z of roadsZ)
-    plane(x,.019,z,14.9,13.3,asphalt,paving);
+  addOrthogonalRoadGrid(scene,{xLines:roadsX,zLines:roadsZ,minX:-168,maxX:12,minZ:-168,maxZ:120,
+    roadMaterial:paving,roadY:.01,xRoadWidth:14.8,zRoadWidth:13.2});
   const boardwalkBuildings=[[-15,69,7.6,'#83bfb9'],[-16,32,9.1,'#e3b19b'],[-16,-16,10.3,'#b3b0be'],[-17,-64,11.4,'#d8bcaa'],[-17,-111,9.5,'#9bbdbb']];
   for(let i=0;i<roadsX.length-1;i++) for(let j=0;j<roadsZ.length-1;j++){
     const x=roadsX[i]+24,z=roadsZ[j]+24;
@@ -835,7 +935,7 @@ export function createWorld({lowSpec=false}={}){
     if(!roadsZ.some(zz=>Math.abs(z-zz)<7)) palm(10.1+rand()*1.75,z,.88+rand()*.25);
     if(!roadsZ.some(zz=>Math.abs(z-zz)<8)&&Math.round(z/9)%2===0) palm(-9.1-rand(),z+.9,.79+rand()*.19);
   }
-  for(let z=-157;z<120;z+=17){lamps(8.9,z,true);lamps(-8.9,z+6,false)}
+  for(let z=-157;z<120;z+=17){lamps(8.05,z,true);lamps(-8.05,z+6,false)}
   for(let z=-165;z<120;z+=1.72){
     if(beachAccess(z)||Math.abs(z-69)<2.3||Math.abs(z-96)<8.9)continue;
     box(16.32,.13,z,.7,.23,1.68,'#b5afa2');

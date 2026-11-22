@@ -132,7 +132,7 @@ export function railAt(distance,line='surface'){
 export function nearestRail(x,z,includeBelow=false,line='surface'){
   const {segments}=routes[line==='below'?'below':'surface'];
   let best;
-  for(const {a,b,len} of segments){
+  for(const {a,b,len,start} of segments){
     let t=Math.max(0,Math.min(1,((x-a[0])*(b[0]-a[0])+(z-a[1])*(b[1]-a[1]))/(Math.pow(b[0]-a[0],2)+Math.pow(b[1]-a[1],2))));
     if(line==='surface'&&!includeBelow&&a[2]<-2&&b[2]<-2)continue;
     const p=railAt(start+len*t,line);

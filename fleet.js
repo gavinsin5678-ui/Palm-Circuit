@@ -1,7 +1,7 @@
 // Handling presets and timed abilities are used by the player-controlled physics.
 const roadDynamics={
   car:{mass:1,suspension:.16,spring:118,damping:19,grip:8.2,roll:.16},
-  sport:{mass:.88,suspension:.14,spring:142,damping:20,grip:9.1,roll:.20},
+  sport:{mass:.88,suspension:.14,spring:142,damping:20,grip:9.1,roll:.20,forwardAcceleration:3},
   van:{mass:1.55,suspension:.24,spring:112,damping:22,grip:6.7,roll:.13},
   bike:{mass:.34,suspension:.23,spring:132,damping:17,grip:7.4,roll:.32},
   rover:{mass:1.32,suspension:.29,spring:106,damping:23,grip:6.8,roll:.12},

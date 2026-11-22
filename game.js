@@ -875,7 +875,14 @@ function update(dt){
       (state.vehicle==='jet'&&state.ability>0?1.60:1)*(taxiBoost?1.24:1)*(busBoost?1.18:1)*(cornerBoost?1.20:1)*
       (.52+.48*(state.vehicleHealth??vehicleMaxHealth(state.vehicle))/vehicleMaxHealth(state.vehicle));
   const speedBefore=state.speed;
-  state.speed=core.longitudinal(state.speed/ratio,+accelerating,+braking,+action('Space'),onRoad||ability('grip')||roughGrip?1:.56,dt*(state.vehicle==='van'?.86:1))*ratio;
+  const inputSpeed=state.speed/ratio,grip=onRoad||ability('grip')||roughGrip?1:.56,
+    longitudinalDt=dt*(state.vehicle==='van'?.86:1),
+    handbrake=+action('Space');
+  state.speed=core.longitudinal(inputSpeed,+accelerating,+braking,handbrake,grip,longitudinalDt)*ratio;
+  if(state.vehicle==='sport'&&accelerating&&!braking){
+    const coastingSpeed=core.longitudinal(inputSpeed,0,0,handbrake,grip,longitudinalDt)*ratio;
+    state.speed=coastingSpeed+(state.speed-coastingSpeed)*(handling.forwardAcceleration??1);
+  }
   const roadTopSpeed=(mod?.topSpeed??(state.vehicle==='sport'?280:Infinity))/3.6;
   if(Number.isFinite(roadTopSpeed))state.speed=minmax(state.speed,-roadTopSpeed*.18,roadTopSpeed);
   if(ability('launch')&&accelerating&&state.speed<12)state.speed+=dt*8;

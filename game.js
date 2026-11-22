@@ -55,7 +55,7 @@ const step=1/60, minmax=(n,a,b)=>Math.max(a,Math.min(b,n));
 const camera=new T.PerspectiveCamera(57,1,.13,610);
 const cameraTarget=new T.Vector3(), lookAt=new T.Vector3(), currentLook=new T.Vector3();
 const prefersReduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-let core, world, renderer, snap=true, perfFrames=0, perfStart=performance.now();
+let core, world, renderer, lowSpecRenderer=false, snap=true, perfFrames=0, perfStart=performance.now();
 let audio,osc,harmonic,volume,sounded=false, manual=false, acc=0, last=0, lastPaint=0, scale=1;
 let indoor=null,insidePlace=null,groundPosition=null,lastMount=null,interactable=null,simTime=0,jumpVelocity=0,deathTimer=0,stunTimer=0;
 const speedBars=Array.from({length:12},()=>document.createElement('i'));$('meter').replaceChildren(...speedBars);
@@ -1213,7 +1213,7 @@ function makeCab(){
 function resize(){
   if(!renderer)return;
   const w=viewport.clientWidth,h=viewport.clientHeight||1;
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.2)*scale);renderer.setSize(w,h,false);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,lowSpecRenderer?1:1.2)*scale);renderer.setSize(w,h,false);
   camera.aspect=w/h;camera.fov=w<540?64:57;camera.updateProjectionMatrix();snap=true;
 }
 function loop(now){
@@ -1294,14 +1294,69 @@ for(const b of document.querySelectorAll('[data-key]')){
 try{
   const {instance}=await WebAssembly.instantiate(Uint8Array.from(atob(wasm),c=>c.charCodeAt(0)));
   core=instance.exports;
-  const canvas=document.createElement('canvas');
-  const gl=canvas.getContext('webgl2',{alpha:false,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
-  if(!gl)throw Error('WebGL 2 is unavailable');
-  renderer=new T.WebGLRenderer({canvas,context:gl});
+  const attempts=[
+    {label:'standard WebGL2',lowSpec:false,options:{alpha:false,antialias:true,failIfMajorPerformanceCaveat:false,powerPreference:'default'}},
+    {label:'low-spec WebGL2',lowSpec:true,options:{alpha:false,antialias:false,failIfMajorPerformanceCaveat:false,powerPreference:'default',depth:true,stencil:false}}
+  ];
+  let contextError=null,canvas,gl;
+  for(const attempt of attempts){
+    canvas=document.createElement('canvas');
+    canvas.addEventListener('webglcontextcreationerror',event=>
+      console.error(`${attempt.label} context creation error:`,event.statusMessage||'No status message from the browser.'));
+    try{
+      gl=canvas.getContext('webgl2',attempt.options);
+    }catch(error){
+      contextError=error;
+      console.error(`${attempt.label} context creation threw:`,error);
+      continue;
+    }
+    if(!gl){
+      contextError=new Error(`${attempt.label} context request returned null.`);
+      console.error(contextError.message);
+      continue;
+    }
+    try{
+      renderer=new T.WebGLRenderer({canvas,context:gl,antialias:attempt.options.antialias});
+      lowSpecRenderer=attempt.lowSpec;
+      break;
+    }catch(error){
+      contextError=error;
+      console.error(`${attempt.label} renderer initialization failed:`,error);
+      renderer=null;
+    }
+  }
+  if(!renderer){
+    const error=new Error('Could not create a WebGL2 renderer, including the low-spec fallback.',{cause:contextError});
+    console.error('The bundled Three.js r183 renderer does not support WebGL1.',error);
+    throw error;
+  }
+  if(lowSpecRenderer){
+    scale=.72;
+    console.warn('Using low-spec WebGL2 mode: antialiasing and shadows are disabled and render resolution is reduced.');
+  }
   renderer.setClearColor('#625872');renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=!lowSpecRenderer;
+  if(renderer.shadowMap.enabled)renderer.shadowMap.type=T.PCFSoftShadowMap;
+  let shaderCompileFailure=false;
+  renderer.debug.checkShaderErrors=true;
+  renderer.debug.onShaderError=(context,program,vertexShader,fragmentShader)=>{
+    shaderCompileFailure=true;
+    console.error('WebGL shader compile/link failure:',{
+      programLog:context.getProgramInfoLog(program),
+      vertexShaderLog:context.getShaderInfoLog(vertexShader),
+      fragmentShaderLog:context.getShaderInfoLog(fragmentShader),
+      vertexShaderSource:context.getShaderSource(vertexShader),
+      fragmentShaderSource:context.getShaderSource(fragmentShader)
+    });
+  };
+  canvas.addEventListener('webglcontextlost',event=>{
+    event.preventDefault();
+    console.error('WebGL context lost during gameplay.');
+    $('load-status').querySelector('span').textContent='The graphics context was lost. Reload the page to try again.';
+    $('load-status').hidden=false;start.disabled=mobileStart.disabled=true;
+  });
   renderer.domElement.tabIndex=0;renderer.domElement.setAttribute('aria-label','Pacifica Bay 3D game canvas');$('world').append(renderer.domElement);
-  world=createWorld();world.arch=makeArchipelago(world.scene,world.roadSurfaceMaterial);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
+  world=createWorld({lowSpec:lowSpecRenderer});world.arch=makeArchipelago(world.scene,world.roadSurfaceMaterial);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
   for(const {car} of Object.values(world.cars))enableDirectionalShadow(car);
   for(const traffic of world.traffic)enableDirectionalShadow(traffic.mesh);
   enableDirectionalShadow(world.life.player.model,true);
@@ -1314,7 +1369,13 @@ try{
   enableDirectionalShadow(world.extras.rider);
   world.scene.add(camera);world.cab=makeCab();world.cab.visible=false;world.passengerCabins=makePassengerCabins(camera);
   initTraffic(0);world.stream.sync(state.x,state.z,flying(),true);resize();new ResizeObserver(()=>{resize();if(manual)draw(0,performance.now())}).observe(viewport);
+  draw(0,performance.now());
+  if(shaderCompileFailure)throw new Error('Initial scene render failed because one or more WebGL shaders did not compile. See the detailed shader logs above.');
+  if(gl.isContextLost())throw new Error('The WebGL2 context was lost during the initial scene render.');
+  const glError=gl.getError();
+  if(glError!==gl.NO_ERROR)throw new Error(`WebGL error 0x${glError.toString(16)} during initial scene render.`);
   start.disabled=mobileStart.disabled=false;$('load-status').hidden=true;syncSelection();refresh();requestAnimationFrame(loop);
 }catch(e){
-  renderer=null;$('load-status').querySelector('span').textContent='The 3D view could not start. Try a browser with WebGL 2 enabled.';console.error(e);
+  renderer=null;$('load-status').querySelector('span').textContent=`The 3D view could not start: ${e instanceof Error?e.message:String(e)}`;
+  $('load-status').hidden=false;console.error('Pacifica startup failed:',e);
 }

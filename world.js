@@ -441,7 +441,7 @@ function waveNormalTexture(){
   texture.magFilter=T.LinearFilter;texture.generateMipmaps=true;texture.needsUpdate=true;
   return texture;
 }
-function atmosphere(scene){
+function atmosphere(scene,lowSpec=false){
   const sky=new T.Mesh(new T.SphereGeometry(580,32,18),new T.ShaderMaterial({
     side:T.BackSide,depthWrite:false,
     vertexShader:`varying vec3 v; void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
@@ -459,7 +459,8 @@ function atmosphere(scene){
       gl_FragColor=vec4(c,1.);
     }`
   }));sky.renderOrder=-100;scene.add(sky);
-  const ocean=new T.Mesh(new T.PlaneGeometry(1800,1800,256,256),new T.ShaderMaterial({
+  const oceanSegments=lowSpec?64:128;
+  const ocean=new T.Mesh(new T.PlaneGeometry(1800,1800,oceanSegments,oceanSegments),new T.ShaderMaterial({
     uniforms:{clock:{value:0},normalMap:{value:waveNormalTexture()},islandCenters:{value:[
       new T.Vector3(313,-120,0),new T.Vector3(313,96,0),new T.Vector3(313,312,0),new T.Vector3(313,528,0),
       new T.Vector3(560,-120,0),new T.Vector3(560,96,0),new T.Vector3(560,312,0)
@@ -766,11 +767,11 @@ function createStream(scene,paving,baseSolids,ocean){
   }
   return {sync,hit,nearby,strike,damageAt,count:()=>tiles.size,destroyed:()=>destroyedBuildings.size};
 }
-export function createWorld(){
+export function createWorld({lowSpec=false}={}){
   seed=10;
   initSurfaceMaterials();
   const scene=new T.Scene();scene.fog=new T.FogExp2('#ae8991',.0031);
-  const sky=atmosphere(scene), solids=[];
+  const sky=atmosphere(scene,lowSpec), solids=[];
   const hemi=new T.HemisphereLight('#d4e3ff','#967568',2.14);scene.add(hemi);
   const sun=new T.DirectionalLight('#ffd3a2',2.1);
   sun.position.set(65,37,-75);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);

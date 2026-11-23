@@ -239,7 +239,7 @@ export function createTerrainPatch(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x
 }
 export function getBuildingMaterials(){
   if(!facadeMaterial||!masonryMaterial)throw new Error('Building materials must be initialized before creating island buildings.');
-  return {facade:facadeMaterial,masonry:masonryMaterial};
+  return {facade:facadeMaterial,masonry:masonryMaterial,glass:buildingGlass};
 }
 const buildingId=(x,z)=>`${x.toFixed(2)}/${z.toFixed(2)}`;
 function add(g,m,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0){

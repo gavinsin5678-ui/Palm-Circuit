@@ -237,7 +237,7 @@ function batch(group){
 }
 function makeInfrastructure(g,solids,asphaltMaterial){
   const paving=asphaltMaterial??mat('#424952');
-  const {facade:facadeMaterial,masonry:masonryMaterial}=getBuildingMaterials();
+  const {facade:facadeMaterial,masonry:masonryMaterial,glass:buildingGlass}=getBuildingMaterials();
   const runwayMark=mat('#e4e0d2',true),laneMark=mat('#ded1a4',true),curb=mat('#abb0a8'),
     light=mat('#fff0c1',true);
   bridgeRoutes=[];

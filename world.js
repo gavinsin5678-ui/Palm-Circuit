@@ -197,6 +197,8 @@ function terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z,fla
         bridgeApproach=centralIsland&&Math.abs(gx-offsetX)<=9&&Math.abs(gz-offsetZ)>=72&&Math.abs(gz-offsetZ)<=94,
         westBridgeApproach=centralIsland&&Math.abs(gz-offsetZ)<=9&&gx>=offsetX-100&&gx<=offsetX-78;
       height=urban||bridgeApproach||westBridgeApproach?1.9:1.9*fade+Math.max(0,height)*fade-1.9;
+      if(mode==='island-dune'&&Math.abs(gz-offsetZ)<=7.4&&gx>=offsetX-100&&gx<=offsetX-80)
+        height=-.10+(gx-(offsetX-100))/20*1.99;
     }
     if(mode==='city'&&onStreet(gx,gz))height=0;
     points.push({px,pz,gx,gz,height,airportGround});
@@ -234,6 +236,10 @@ function terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z,fla
 }
 export function createTerrainPatch(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z){
   return terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX,offsetZ);
+}
+export function getBuildingMaterials(){
+  if(!facadeMaterial||!masonryMaterial)throw new Error('Building materials must be initialized before creating island buildings.');
+  return {facade:facadeMaterial,masonry:masonryMaterial};
 }
 const buildingId=(x,z)=>`${x.toFixed(2)}/${z.toFixed(2)}`;
 function add(g,m,x,y,z,sx,sy,sz,c,rx=0,ry=0,rz=0){
@@ -276,9 +282,9 @@ function unregisterInstances(group){
 }
 function roadMaterial(){
   const cvs=document.createElement('canvas');cvs.width=cvs.height=128;
-  const c=cvs.getContext('2d');c.fillStyle='#adaeb1';c.fillRect(0,0,128,128);
+  const c=cvs.getContext('2d');c.fillStyle='#292e34';c.fillRect(0,0,128,128);
   for(let i=0;i<5200;i++){
-    const v=120+Math.floor(rand()*104);c.fillStyle=`rgba(${v},${v},${v},.28)`;
+    const v=52+Math.floor(rand()*58);c.fillStyle=`rgba(${v},${v},${v},.35)`;
     c.fillRect(rand()*128,rand()*128,rand()<.07?3:1,1);
   }
   const texture=new T.CanvasTexture(cvs);texture.colorSpace=T.SRGBColorSpace;
@@ -596,7 +602,10 @@ function atmosphere(scene,lowSpec=false){
     ]}},
     vertexShader:`uniform float clock;varying vec3 v;
     float waveAt(vec2 p,float t){
-      return -.13+sin(p.y*.34+t*1.1)*.18+sin(p.x*.2+p.y*.13-t*.82)*.12+sin(p.x*.63-p.y*.46+t*1.7)*.035;
+      float wave=-.13+sin(p.y*.34+t*1.1)*.18+sin(p.x*.2+p.y*.13-t*.82)*.12+sin(p.x*.63-p.y*.46+t*1.7)*.035;
+      float channel=smoothstep(25.,30.,p.x)*(1.-smoothstep(213.,218.,p.x))*
+        (1.-smoothstep(8.,11.,abs(p.y-96.)));
+      return mix(wave,min(wave,-1.65),channel);
     }
     void main(){
       vec4 w=modelMatrix*vec4(position,1.);

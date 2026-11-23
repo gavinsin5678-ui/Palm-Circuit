@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {person} from './life-world.js?v=articulated-physics';
-import {createTerrainPatch,addIslandForest,addOrthogonalRoadGrid} from './world.js?v=surface-detail';
+import {createTerrainPatch,addIslandForest,addOrthogonalRoadGrid,getBuildingMaterials} from './world.js?v=surface-detail';
 
 export const islands=[
   {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',centerX:313,z:96,ground:'#c89959',rim:'#e9c084',road:'#675652',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},
@@ -21,14 +21,8 @@ export const islandSurfaceY=(x,z)=>{
   return 1.9*fade;
 };
 const outerLinks=islands.filter(i=>i.centerX>313);
-let interIslandTunnels=[],bridgeRoutes=[];
+let bridgeRoutes=[];
 export function roadHeightAt(x,z){
-  for(const route of interIslandTunnels){
-    if(Math.abs(z-route.z)>7.1||x<388||x>480)continue;
-    const position=(x-388)/(480-388)*(route.points.length-1),index=Math.min(route.points.length-2,Math.floor(position));
-    const t=position-index;
-    return route.points[index].y+(route.points[index+1].y-route.points[index].y)*t+.08;
-  }
   for(const route of bridgeRoutes){
     const lateral=route.axis==='x'?Math.abs(z-route.fixed):Math.abs(x-route.fixed);
     if(lateral>route.width*.5)continue;
@@ -42,16 +36,19 @@ export function roadHeightAt(x,z){
   }
   return undefined;
 }
-export const highwayAt=(x,z)=>(x>=-2&&x<=313&&Math.abs(z-96)<=8.1)||(Math.abs(x-313)<=8.1&&z>=-214&&z<=622)||
-  outerLinks.some(i=>(x>=388&&x<=480&&Math.abs(z-i.z)<=7.2)||(x>313&&x<388&&Math.abs(z-i.z)<=7.2));
+export const highwayAt=(x,z)=>(x>=-2&&x<=233&&Math.abs(z-96)<=8.1)||(Math.abs(x-313)<=8.1&&z>=-214&&z<=622)||
+  outerLinks.some(i=>(x>=388&&x<=480&&Math.abs(z-i.z)<=8.1)||(x>313&&x<388&&Math.abs(z-i.z)<=8.1));
 export const solidLand=(x,z)=>x<=30.45||!!islandAt(x,z)||highwayAt(x,z);
 export const islandRoadY=(x,z)=>{
   const island=islandAt(x,z);if(!island)return undefined;
   const dx=x-island.centerX,dz=z-island.z;
+  if(island.id==='dune'&&Math.abs(dz)<=7.4&&dx>=-100&&dx<=-80)
+    return .01+(dx+100)/20*1.99;
   const runway=Math.abs(dx-56)<=9&&Math.abs(dz)<=58,
     apron=Math.abs(dx-38)<=12&&Math.abs(dz)<=9;
   if(runway||apron)return 2.15;
-  const vertical=[-80,-40,40,80].some(offset=>Math.abs(dx-offset)<=7&&Math.abs(dz)<=74)||
+  const vertical=(island.id==='dune'?[-40,0,40,80]:[-80,-40,0,40,80])
+    .some(offset=>Math.abs(dx-offset)<=7&&Math.abs(dz)<=74)||
     Math.abs(dx)<=7&&Math.abs(dz)<=(island.centerX===313?94:74);
   const horizontal=[-72,-36,0,36,72].some(offset=>Math.abs(dz-offset)<=6.7&&Math.abs(dx)<=82);
   return vertical||horizontal?Math.max(islandSurfaceY(x,z)+.08,2.0):undefined;
@@ -240,14 +237,10 @@ function batch(group){
 }
 function makeInfrastructure(g,solids,asphaltMaterial){
   const paving=asphaltMaterial??mat('#424952');
+  const {facade:facadeMaterial,masonry:masonryMaterial}=getBuildingMaterials();
   const runwayMark=mat('#e4e0d2',true),laneMark=mat('#ded1a4',true),curb=mat('#abb0a8'),
-    light=mat('#fff0c1',true),buildingPalette={
-      dune:['#b77a52','#d0a272','#c78e61'],jungle:['#6e6752','#887b5c','#a48b69'],
-      snow:['#677f97','#8297a4','#9bb0ba'],future:['#485275','#586483','#636b8b'],
-      obsidian:['#34383d','#45494b','#55524d'],bamboo:['#5c7357','#738666','#9a8b68'],
-      atoll:['#d8c6a9','#c8b18f','#eee1c8']
-    };
-  interIslandTunnels=[];bridgeRoutes=[];
+    light=mat('#fff0c1',true);
+  bridgeRoutes=[];
   const roadBox=(parent,x,y,z,w,h,d,material)=>{
     const mesh=new T.Mesh(boxGeo,material);mesh.position.set(x,y,z);mesh.scale.set(w,h,d);parent.add(mesh);return mesh;
   };
@@ -265,19 +258,19 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     }
     parent.add(mesh);return mesh;
   };
-  const addPiers=(axis,coordinate,y)=>{
+  const addPiers=(axis,fixed,coordinate,y)=>{
     const deckBottom=y-1.28,seabed=-9,columnHeight=deckBottom-(seabed+1);
     for(const side of [-1,1]){
-      const x=axis==='x'?coordinate:313+side*9.25,
-        z=axis==='x'?96+side*9.25:coordinate;
+      const x=axis==='x'?coordinate:fixed+side*9.25,
+        z=axis==='x'?fixed+side*9.25:coordinate;
       box(g,x,seabed+.5,z,4.8,1,4.8,'#858d8d');
       box(g,x,(seabed+1+deckBottom)*.5,z,1.65,columnHeight,1.65,'#858d8d');
     }
-    if(axis==='x')box(g,coordinate,deckBottom-.3,96,3.6,.6,21,'#858d8d');
-    else box(g,313,deckBottom-.3,coordinate,21,.6,3.6,'#858d8d');
+    if(axis==='x')box(g,coordinate,deckBottom-.3,fixed,3.6,.6,21,'#858d8d');
+    else box(g,fixed,deckBottom-.3,coordinate,21,.6,3.6,'#858d8d');
   };
-  const bridge=(axis,fixed,points,width=16.2)=>{
-    const route={axis,fixed,points,width};bridgeRoutes.push(route);
+  const bridge=(axis,fixed,points,width=16.2,waterRanges=[])=>{
+    const route={axis,fixed,points,width,waterRanges};bridgeRoutes.push(route);
     const pointAt=value=>{
       let index=points.findIndex((point,i)=>i<points.length-1&&value<=points[i+1][axis==='x'?0:2]);
       if(index<0)index=points.length-2;
@@ -286,28 +279,24 @@ function makeInfrastructure(g,solids,asphaltMaterial){
       return a.map((v,k)=>v+(b[k]-v)*t);
     };
     const start=points[0][axis==='x'?0:2],end=points.at(-1)[axis==='x'?0:2],step=6,
-      boundaries=[start,...(axis==='x'?[30.5,213]:islands.filter(island=>Math.abs(fixed-island.centerX)<=8)
-        .flatMap(island=>[island.z-72,island.z+72])),end]
+      boundaries=[start,...waterRanges.flatMap(([a,b])=>[a,b]),end]
         .filter(value=>value>=start&&value<=end).sort((a,b)=>a-b);
     let supportAt=start+11;
     for(let span=1;span<boundaries.length;span++)for(let value=boundaries[span-1];value<boundaries[span];value+=step){
       const next=Math.min(boundaries[span],value+step),mid=(value+next)*.5,a=pointAt(value),b=pointAt(next),
-        overLand=axis==='x'?mid<=30.5||mid>=213:islands.some(island=>Math.abs(fixed-island.centerX)<=8&&Math.abs(mid-island.z)<=72);
-      if(axis==='x'||!overLand){
+        overWater=waterRanges.some(([a,b])=>mid>a&&mid<b);
+      if(axis==='x'||overWater){
         roadBeam(g,a,b,width,.18,paving,axis);
-        const girderA=[a[0],a[1]-.73,a[2]],girderB=[b[0],b[1]-.73,b[2]];
+        const girderA=[a[0],a[1]-.18,a[2]],girderB=[b[0],b[1]-.18,b[2]];
         roadBeam(g,girderA,girderB,width-.8,1.1,mat('#858d8d'),axis);
         for(const side of [-1,1]){
           const barrierA=[a[0],a[1]+.5,a[2]],barrierB=[b[0],b[1]+.5,b[2]];
           roadBeam(g,barrierA,barrierB,.45,1.0,mat('#abb0a8'),axis,side*(width*.5-.225));
           const railA=[a[0],a[1]+1.33,a[2]],railB=[b[0],b[1]+1.33,b[2]];
           roadBeam(g,railA,railB,.14,.12,mat('#66787d'),axis,side*(width*.5-.225));
-          if(axis==='x')solids.push({x:(mid),z:fixed+side*(width*.5-.225),w:step*.51,d:.24,h:Math.max(a[1],b[1])+1.4});
-          else solids.push({x:fixed+side*(width*.5-.225),z:mid,w:.24,d:step*.51,h:Math.max(a[1],b[1])+1.4});
         }
-        if(!overLand&&mid>=supportAt){
-          const clear=axis==='x'?mid>30.5&&mid<213:!islands.some(island=>Math.abs(fixed-island.centerX)<=8&&Math.abs(mid-island.z)<=94);
-          if(clear){addPiers(axis,mid,pointAt(mid)[1]);supportAt=mid+22}
+        if(overWater&&mid>=supportAt){
+          addPiers(axis,fixed,mid,pointAt(mid)[1]);supportAt=mid+22;
         }
         const centerlineA=[a[0],a[1]+.015,a[2]],centerlineB=[b[0],b[1]+.015,b[2]];
         for(const side of [-1,1]){
@@ -320,25 +309,21 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     }
     const shoulder=width*.5-.225;
     if(axis==='x'){
-      for(const side of [-1,1])solids.push({x:(start+end)*.5,z:fixed+side*shoulder,w:(end-start)*.5,d:.24,h:8});
+      const top=Math.max(...points.map(point=>point[1]))+1.4;
+      for(const side of [-1,1])solids.push({x:(start+end)*.5,z:fixed+side*shoulder,w:(end-start)*.5,d:.24,h:top});
     }else{
-      const runs=[];let runStart=start;
-      for(const island of islands.filter(item=>Math.abs(fixed-item.centerX)<=8).sort((a,b)=>a.z-b.z)){
-        const coreStart=island.z-72,coreEnd=island.z+72;
-        if(coreStart>runStart)runs.push([runStart,coreStart]);
-        runStart=coreEnd;
-      }
-      if(runStart<end)runs.push([runStart,end]);
-      for(const [lo,hi] of runs)for(const side of [-1,1])
-        solids.push({x:fixed+side*shoulder,z:(lo+hi)*.5,w:.24,d:(hi-lo)*.5+.1,h:8});
+      for(const [lo,hi] of waterRanges)for(const side of [-1,1])
+        solids.push({x:fixed+side*shoulder,z:(lo+hi)*.5,w:.24,d:(hi-lo)*.5,h:8});
     }
   };
-  bridge('x',96,[[-2,.05,96],[30.5,6.5,96],[213,6.5,96],[235,2.0,96]]);
+  bridge('x',96,[[-2,.01,96],[213,.01,96]],16.2,[[30.5,213]]);
   const spine=[];
   for(const island of islands.filter(item=>item.centerX===313).sort((a,b)=>a.z-b.z)){
     spine.push([313,6.5,island.z-94],[313,2.0,island.z-72],[313,2.0,island.z+72],[313,6.5,island.z+94]);
   }
-  bridge('z',313,spine);
+  bridge('z',313,spine,16.2,[[-26,2],[190,218],[406,434]]);
+  for(const island of outerLinks)
+    bridge('x',island.z,[[388,2,island.z],[410,6.5,island.z],[458,6.5,island.z],[480,2,island.z]],16.2,[[413,460]]);
   for(const i of islands){
     const cx=i.centerX,z=i.z,terrainType=i.id==='snow'?'alpine':i.id,
       city=new T.Group(),solidStart=solids.length,
@@ -356,17 +341,25 @@ function makeInfrastructure(g,solids,asphaltMaterial){
       minX:cx-82,maxX:cx+82,minZ:z-82,maxZ:z+82,
       xLineRange:x=>[z-(i.centerX===313&&Math.abs(x-cx)<.1?72:74),
         z+(i.centerX===313&&Math.abs(x-cx)<.1?72:74)],
+      zLineRange:line=>i.id==='dune'&&Math.abs(line-z)<.1?[cx-80,cx+82]:[cx-82,cx+82],
       roadMaterial:paving,roadY:.1,xRoadWidth:14.8,zRoadWidth:13.2,
       exclusions:[islandRunwayExclusion],streetlights:true,lampExclusions:[islandRunwayExclusion,...bridgeLampExclusions]
     });
+    if(i.id==='dune'){
+      const start=[cx-100,.01-1.9,z],end=[cx-80,2-1.9,z];
+      roadBeam(city,start,end,14.8,.18,paving,'x');
+      for(const side of [-1,1]){
+        roadBeam(city,[start[0],start[1]+.025,start[2]],[end[0],end[1]+.025,end[2]],.14,.035,laneMark,'x',side*.16);
+        roadBeam(city,[start[0],start[1]+.03,start[2]],[end[0],end[1]+.03,end[2]],.13,.035,runwayMark,'x',side*6.9);
+      }
+    }
     const develop=(x,zz,n)=>{
       const height=(i.id==='future'||i.id==='obsidian'?24:12)+(n*11%21),
         width=10+(n%3)*2.4,depth=10+((n+1)%3)*2.1,
         runwayOverlap=Math.abs(x-runwayX)<18+width*.5&&Math.abs(zz-runwayZ)<64+depth*.5,
         apronOverlap=Math.abs(x-(runwayX-18))<14+width*.5&&Math.abs(zz-runwayZ)<10+depth*.5;
       if(runwayOverlap||apronOverlap)return;
-      const palette=buildingPalette[i.id],facade=sandstone(palette[n%palette.length]),
-        building=new T.Mesh(boxGeo,facade);
+      const facade=n%4===0?masonryMaterial:facadeMaterial,building=new T.Mesh(boxGeo,facade);
       building.position.set(x,height*.5,zz);building.scale.set(width,height,depth);city.add(building);
       roadBox(city,x,height+.28,zz,width+.42,.56,depth+.42,mat(i.id==='snow'?'#e9f5f8':i.accent));
       for(let floor=2.2;floor<height-1;floor+=3.1){
@@ -434,32 +427,6 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     sign(city,cx-88,7,z+20,i.name,i.accent);
     batch(city);
     for(let solid=solidStart;solid<solids.length;solid++)solids[solid].h+=1.9;
-  }
-  for(const i of outerLinks){
-    const z=i.z,curve=new T.CatmullRomCurve3([
-      new T.Vector3(388,1.9,z),new T.Vector3(398,.9,z),new T.Vector3(410,-.55,z),
-      new T.Vector3(458,-.55,z),new T.Vector3(470,.9,z),new T.Vector3(480,1.9,z)
-    ],false,'centripetal',.5),samples=curve.getPoints(72),
-      shellCurve=new T.CatmullRomCurve3(samples.map(p=>new T.Vector3(p.x,p.y+5,p.z)),false,'centripetal',.5),
-      shell=new T.Mesh(new T.TubeGeometry(shellCurve,96,5.65,14,false),new T.MeshStandardMaterial({color:'#58656a',roughness:.94,side:T.DoubleSide}));
-    g.add(shell);
-    interIslandTunnels.push({z,points:samples});
-    const portalGeometry=new T.TorusGeometry(5.35,.42,10,32),portalMaterial=mat('#879398');
-    for(const end of [0,samples.length-1]){
-      const p=samples[end],tangent=curve.getTangentAt(end/(samples.length-1)).normalize();
-      const ring=new T.Mesh(portalGeometry,portalMaterial);ring.position.set(p.x,p.y+5,p.z);
-      ring.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),tangent);g.add(ring);
-    }
-    for(let n=0;n<samples.length-1;n+=2){
-      const a=samples[n],b=samples[n+1],dx=b.x-a.x,dz=b.z-a.z,heading=Math.atan2(dx,dz),length=Math.hypot(dx,dz)+.12,
-        road=roadBox(g,(a.x+b.x)*.5,(a.y+b.y)*.5,(a.z+b.z)*.5,11,.16,length,paving);
-      road.rotation.y=heading;
-      for(const side of [-1,1]){
-        const line=roadBox(g,(a.x+b.x)*.5+Math.cos(heading)*side*2.7,(a.y+b.y)*.5+.11,(a.z+b.z)*.5-Math.sin(heading)*side*2.7,.13,.035,length,runwayMark);
-        line.rotation.y=heading;
-      }
-      if(n%12===0)roadBox(g,(a.x+b.x)*.5,(a.y+b.y)*.5+9.9,z,3.4,.13,.22,light);
-    }
   }
 }
 function makeRailInfrastructure(g){

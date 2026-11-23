@@ -97,15 +97,11 @@ function roadPath(s,d,scenic){
     [dx,dz],[dx,d.z],[d.x,d.z]]);
 }
 function ferryPath(s,d,scenic){
-  const lane=223,sea=.18,under=-4.5;
+  const lane=223,sea=.18;
   const points=s.region==='main'?[[s.x,s.z,sea],[36,s.z,sea],[47,s.z,sea],[lane,s.z,sea]]:
     [[s.x,s.z,sea],[lane,s.z,sea]];
   const waterSegment=(x,from,to)=>{
-    if((from<96&&to>96)||(from>96&&to<96)){
-      const direction=Math.sign(to-from);
-      points.push([x,96-direction*12,sea],[x,96-direction*8,under],
-        [x,96+direction*8,under],[x,96+direction*12,sea]);
-    }
+    if((from<96&&to>96)||(from>96&&to<96))points.push([x,96,sea]);
     points.push([x,to,sea]);
   };
   if(scenic){

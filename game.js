@@ -4,7 +4,7 @@ import wasm from './drive-wasm.js?v=airfield';
 import {parking,beachAccess,dockHeight,waveHeight,animatePerson,ragdollPerson,paintWake,makeInterior,disposeInterior} from './life-world.js?v=articulated-physics';
 import {createSocial} from './social.js?v=connections';
 import {createMobility} from './mobility.js?v=gameplay-overhaul';
-import {makeArchipelago,regions,islandAt,islandSurfaceY,islandRoadY,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt} from './metro-world.js?v=gameplay-overhaul';
+import {makeArchipelago,regions,islandAt,islandSurfaceY,islandRoadY,highwayAt,isRoad,solidLand,runways,stops,stopById,nearestRail,railAt,railLength,railRouteLength,railSector,signals,signalAt,surfaceRailClearance} from './metro-world.js?v=gameplay-overhaul';
 import {makeTerminal,venueFor} from './terminal-world.js?v=gameplay-overhaul';
 import {cabinLevel,cabinService,makePassengerCabins} from './cabin.js?v=terminal';
 import {fleetProducts,vehicleDynamics} from './fleet.js?v=road-dynamics';
@@ -73,6 +73,11 @@ const walking=()=>state.vehicle==='walk';
 const boating=()=>isSea(state.vehicle);
 const rail=()=>isRail(state.vehicle);
 const motoring=()=>!walking()&&!flying()&&!boating()&&!rail();
+const buildingClearance=(x,z,w,d)=>surfaceRailClearance(x,z,w,d)&&stops.every(s=>{
+  if(!['rail','bus'].includes(s.type))return true;
+  const sw=s.type==='rail'?15:4.6,sd=s.type==='rail'?9:3.25;
+  return Math.abs(x-s.x)>=(w+sw)*.5+1||Math.abs(z-s.z)>=(d+sd)*.5+1;
+});
 const drivable=(x,z)=>x<=15.5||!!islandAt(x,z)||highwayAt(x,z);
 const roadSurface=(x,z)=>x<=15.5&&(onStreet(x,z)||atAirfield(x,z))||isRoad(x,z);
 const surfaceY=(x,z)=>{
@@ -83,41 +88,8 @@ const surfaceY=(x,z)=>{
   return islandRoadY(x,z)??islandSurfaceY(x,z);
 };
 const waveHeightAt=(x,z,time)=>{
-  const wave=waveHeight(x,z,time),smooth=(a,b,value)=>{
-    const t=minmax((value-a)/(b-a),0,1);return t*t*(3-2*t);
-  };
-  const channel=smooth(25,30,x)*(1-smooth(213,218,x))*(1-smooth(8,11,Math.abs(z-96)));
-  let h=wave+(Math.min(wave,-1.65)-wave)*channel;
-  
-  // Clamp wave height under bridges to prevent wave overlap (>=0.5m below deck)
-  // Pacifica Bay Bridge: x in [-2,213], z near 96, deckY=0.01, clearance 9m -> clamp to <= -0.49
-  if(x>=-2 && x<=213 && Math.abs(z-96)<=12){
-    const maxWave=0.01-0.5; // deckY - 0.5m
-    h=Math.min(h,maxWave);
-  }
-  // North-south spine bridges at x=313, deckY=1.9, clearance 9m -> clamp to <= 1.4
-  if(Math.abs(x-313)<=12){
-    // Jungle-Dune channel: z in [-238,24]
-    if(z>=-238 && z<=24){
-      h=Math.min(h,1.9-0.5);
-    }
-    // Dune-Snow channel: z in [168,242]
-    if(z>=168 && z<=242){
-      h=Math.min(h,1.9-0.5);
-    }
-    // Snow-Future channel: z in [314,482]
-    if(z>=314 && z<=482){
-      h=Math.min(h,1.9-0.5);
-    }
-  }
-  // East-west bridges to outer islands at z=-144, 96, 336, deckY=1.9
-  // Bridge corridors: x in [388,580], z near -144, 96, 336
-  if(x>=388 && x<=580){
-    if(Math.abs(z+144)<=12) h=Math.min(h,1.9-0.5); // Obsidian bridge
-    if(Math.abs(z-96)<=12) h=Math.min(h,1.9-0.5);   // Bamboo bridge
-    if(Math.abs(z-336)<=12) h=Math.min(h,1.9-0.5);  // Atoll bridge
-  }
-  return h;
+  const deckY=world?.arch.roadHeightAt(x,z);
+  return deckY===undefined?waveHeight(x,z,time):Math.min(waveHeight(x,z,time),deckY-.5);
 };
 const solidHit=(x,z,y,r)=>world?.stream.hit(x,z,y,r)||world?.arch.hit(x,z,y,r);
 const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);if(x>219)properties.push(...world.arch.properties);return {properties,people}};
@@ -1394,7 +1366,7 @@ try{
     $('load-status').hidden=false;start.disabled=mobileStart.disabled=true;
   });
   renderer.domElement.tabIndex=0;renderer.domElement.setAttribute('aria-label','Pacifica Bay 3D game canvas');$('world').append(renderer.domElement);
-  world=createWorld({lowSpec:lowSpecRenderer});world.arch=makeArchipelago(world.scene,world.roadSurfaceMaterial);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
+  world=createWorld({lowSpec:lowSpecRenderer,buildingClearance});world.arch=makeArchipelago(world.scene,world.roadSurfaceMaterial);world.airDefense=createAirDefense(world.scene);world.traffic.push(...world.arch.traffic);
   for(const {car} of Object.values(world.cars))enableDirectionalShadow(car);
   for(const traffic of world.traffic)enableDirectionalShadow(traffic.mesh);
   enableDirectionalShadow(world.life.player.model,true);

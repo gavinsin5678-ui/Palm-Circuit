@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {person} from './life-world.js?v=articulated-physics';
-import {createTerrainPatch,addIslandForest,addOrthogonalRoadGrid,getBuildingMaterials} from './world.js?v=surface-detail';
+import {createTerrainPatch,addIslandForest,addOrthogonalRoadGrid,getBuildingMaterials,clearOfRoads} from './world.js?v=surface-detail';
 
 export const islands=[
   {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',centerX:313,z:96,ground:'#c89959',rim:'#e9c084',road:'#1a1d21',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},
@@ -21,7 +21,18 @@ export const islandSurfaceY=(x,z)=>{
   return 1.9*fade;
 };
 const outerLinks=islands.filter(i=>i.centerX>313);
+const bridgeWaterways=[
+  {axis:'x',fixed:96,start:30.5,end:213},
+  {axis:'z',fixed:313,start:-50,end:2},
+  {axis:'z',fixed:313,start:190,end:242},
+  {axis:'z',fixed:313,start:430,end:482},
+  ...[-144,96,336].map(fixed=>({axis:'x',fixed,start:413,end:480}))
+];
 let bridgeRoutes=[];
+export const bridgeWaterAt=(x,z)=>bridgeWaterways.some(({axis,fixed,start,end})=>{
+  const across=axis==='x'?z-fixed:x-fixed,along=axis==='x'?x:z;
+  return Math.abs(across)<=8.1&&along>=start&&along<=end;
+});
 export function roadHeightAt(x,z){
   for(const route of bridgeRoutes){
     const lateral=route.axis==='x'?Math.abs(z-route.fixed):Math.abs(x-route.fixed);
@@ -36,9 +47,10 @@ export function roadHeightAt(x,z){
   }
   return undefined;
 }
-export const highwayAt=(x,z)=>(x>=-2&&x<=213&&Math.abs(z-96)<=8.1)||(Math.abs(x-313)<=8.1&&z>=-238&&z<=482)||
-  outerLinks.some(i=>(x>=388&&x<=580&&Math.abs(z-i.z)<=8.1));
-export const solidLand=(x,z)=>x<=30.45||!!islandAt(x,z)||highwayAt(x,z);
+export const highwayAt=(x,z)=>(x>=-2&&x<=231&&Math.abs(z-96)<=8.1)||
+  (Math.abs(x-313)<=8.1&&(z>=-72&&z<=36||z>=168&&z<=264||z>=408&&z<=504))||
+  outerLinks.some(i=>(x>=393&&x<=500&&Math.abs(z-i.z)<=8.1));
+export const solidLand=(x,z)=>x<=30.45||!!islandAt(x,z)&&!bridgeWaterAt(x,z)||highwayAt(x,z)&&!bridgeWaterAt(x,z);
 export const islandRoadY=(x,z)=>{
   const island=islandAt(x,z);if(!island)return undefined;
   const dx=x-island.centerX,dz=z-island.z;
@@ -90,18 +102,15 @@ for(const i of islands){
 for(const i of islands)stops.push(stop(`${i.id}-rail`,'rail',`${i.name} Rail Terminal`,i.centerX,i.z,i.id,{platform:true}));
 export const stopById=id=>stops.find(s=>s.id===id);
 export const stopTypes={rail:'RAIL + METRO',ferry:'FERRY',airport:'AIRPORT',bus:'BUS',taxi:'TAXI',sports:'SPORTS',law:'POLICE',bank:'BANK',garage:'GARAGE',good:'CROSSING',hospital:'HOSPITAL',arena:'ARENA'};
+for(const [id,x,z] of [['central',24,120],['depot',-120,72],['boardwalk',24,72],['downtown',24,-24],['airbus',-164,111]]){
+  Object.assign(stopById(id),{x,z});
+}
 const surfaceLine=[
-  [-110,86,12],[-96,96,12],[-48,96,12],[0,96,12],[11.8,99,12],
-  [30,99,12],[30,54,12],[220,54,12],[302,54,12],
-  [302,-120,12],[220,-120,12],[220,312,12],[302,312,12],[302,528,12],
-  [388,528,12],[460,528,12],[560,528,12],[560,312,12],[560,96,12],[560,-120,12]
+  [-120,84,12],[-96,108,12],[-48,108,12],[0,108,12],[24,108,12],[30,108,12],
+  [220,108,12],[325,108,12],[325,-132,12],[220,-132,12],[220,324,12],[325,324,12],
+  [325,528,12],[405,528,12],[460,528,12],[552,528,12],[552,324,12],[552,108,12],[552,-132,12]
 ];
-const metroLine=[
-  [-110,86,-16],[-96,96,-16],[-48,96,-16],[0,96,-16],[11.8,99,-16],
-  [30,99,-16],[30,54,-16],[220,54,-16],[302,54,-16],
-  [302,-120,-16],[220,-120,-16],[220,312,-16],[302,312,-16],[302,528,-16],
-  [388,528,-16],[460,528,-16],[560,528,-16],[560,312,-16],[560,96,-16],[560,-120,-16]
-];
+const metroLine=surfaceLine.map(([x,z])=>[x,z,-16]);
 export const railRoutes={surface:surfaceLine,below:metroLine};
 export const routeLine=surfaceLine;
 export const railSector=(x,y)=>y>-3?'Surface line':x>31&&x<237?'Under the bay':'Underground line';
@@ -120,6 +129,45 @@ const makeSegments=points=>{
 const routes=Object.fromEntries(Object.entries(railRoutes).map(([id,points])=>[id,makeSegments(points)]));
 export const railRouteLength=line=>routes[line==='below'?'below':'surface'].length;
 export const railLength=railRouteLength('surface');
+const segmentIntersectsRect=(a,b,rect)=>{
+  let low=0,high=1;
+  const dx=b[0]-a[0],dz=b[1]-a[1];
+  for(const [p,q] of [[-dx,a[0]-rect.minX],[dx,rect.maxX-a[0]],[-dz,a[1]-rect.minZ],[dz,rect.maxZ-a[1]]]){
+    if(p===0){if(q<0)return false;continue}
+    const t=q/p;
+    if(p<0){if(t>high)return false;low=Math.max(low,t)}
+    else{if(t<low)return false;high=Math.min(high,t)}
+  }
+  return true;
+};
+export const surfaceRailClearance=(x,z,w,d,clearance=6)=>{
+  const rect={minX:x-w*.5-clearance,maxX:x+w*.5+clearance,minZ:z-d*.5-clearance,maxZ:z+d*.5+clearance};
+  return !routes.surface.segments.some(({a,b})=>segmentIntersectsRect(a,b,rect));
+};
+function positionIslandStations(){
+  for(const island of islands){
+    const xLines=[-80,-40,0,40,80].map(offset=>island.centerX+offset),
+      zLines=[-72,-36,0,36,72].map(offset=>island.z+offset),
+      sites=[];
+    const candidates=[-60,-20,20,60].flatMap(dx=>[-54,-18,18,54].map(dz=>({
+      x:island.centerX+dx,z:island.z+dz
+    })));
+    const stations=stops.filter(s=>s.region===island.id&&['rail','bus'].includes(s.type))
+      .sort((a,b)=>Number(b.type==='rail')-Number(a.type==='rail'));
+    for(const station of stations){
+      const w=station.type==='rail'?15:4.6,d=station.type==='rail'?9:3.25,
+        runway=runways.find(item=>item.id===island.id),
+        site=candidates.map(p=>({...p,distance:Math.hypot(p.x-station.x,p.z-station.z)}))
+          .sort((a,b)=>a.distance-b.distance)
+          .find(p=>clearOfRoads(p.x,p.z,w+.5,d+.5,xLines,zLines)&&
+            surfaceRailClearance(p.x,p.z,w+.5,d+.5)&&
+            !(Math.abs(p.x-runway.x)<=9+(w+.5)*.5&&Math.abs(p.z-runway.z)<=58+(d+.5)*.5)&&
+            !sites.some(q=>Math.abs(p.x-q.x)<(w+.5+q.w)*.5+1&&Math.abs(p.z-q.z)<(d+.5+q.d)*.5+1));
+      if(!site)throw new Error(`Unable to place ${station.name} clear of roads and rail right-of-way.`);
+      station.x=site.x;station.z=site.z;sites.push({...site,w:w+.5,d:d+.5});
+    }
+  }
+}
 export function railAt(distance,line='surface'){
   const {segments,length}=routes[line==='below'?'below':'surface'];
   const s=Math.max(0,Math.min(length,distance)), seg=segments.find(q=>s<=q.start+q.len)??segments.at(-1);
@@ -240,6 +288,7 @@ function makeInfrastructure(g,solids,asphaltMaterial){
   const {facade:facadeMaterial,masonry:masonryMaterial,glass:buildingGlass}=getBuildingMaterials();
   const runwayMark=mat('#e4e0d2',true),laneMark=mat('#ded1a4',true),curb=mat('#abb0a8'),
     light=mat('#fff0c1',true);
+  positionIslandStations();
   bridgeRoutes=[];
   const roadBox=(parent,x,y,z,w,h,d,material)=>{
     const mesh=new T.Mesh(boxGeo,material);mesh.position.set(x,y,z);mesh.scale.set(w,h,d);parent.add(mesh);return mesh;
@@ -258,38 +307,55 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     }
     parent.add(mesh);return mesh;
   };
-  const addPiers=(axis,fixed,coordinate,y)=>{
-    const deckBottom=y-1.28,seabed=-9,columnHeight=deckBottom-(seabed+1);
+  const deckY=7.5,width=16.2,beamMaterial=mat('#858d8d'),railMaterial=mat('#66787d'),
+    barrierMaterial=mat('#abb0a8'),seabedMaterial=mat('#263b45');
+  const addHighPier=(axis,fixed,coordinate)=>{
+    const seabed=-5.5,deckBottom=deckY-1.28,columnHeight=deckBottom-(seabed+1);
     for(const side of [-1,1]){
       const x=axis==='x'?coordinate:fixed+side*9.25,
         z=axis==='x'?fixed+side*9.25:coordinate;
-      box(g,x,seabed+.5,z,4.8,1,4.8,'#858d8d');
-      box(g,x,(seabed+1+deckBottom)*.5,z,1.65,columnHeight,1.65,'#858d8d');
+      box(g,x,seabed+.5,z,6,1,6,'#757d7d');
+      box(g,x,(seabed+1+deckBottom)*.5,z,2,columnHeight,2,'#757d7d');
+      box(g,x,deckBottom-.3,z,6.6,.6,6.6,'#757d7d');
     }
-    if(axis==='x')box(g,coordinate,deckBottom-.3,fixed,3.6,.6,21,'#858d8d');
-    else box(g,fixed,deckBottom-.3,coordinate,21,.6,3.6,'#858d8d');
+    if(axis==='x')box(g,coordinate,deckBottom-.3,fixed,4,.6,24,'#757d7d');
+    else box(g,fixed,deckBottom-.3,coordinate,24,.6,4,'#757d7d');
   };
-  // High-clearance bridge with arched navigation spans (>=8.5m clearance, >=30m pier spacing)
-  const buildHighBridge=(axis,fixed,startCoord,endCoord,deckY,waterRange,width=16.2,clearance=9.0,pierSpacing=32)=>{
-    const route={axis,fixed,points:[[axis==='x'?startCoord:fixed,deckY,axis==='z'?startCoord:fixed],[axis==='x'?endCoord:fixed,deckY,axis==='z'?endCoord:fixed]],width,waterRanges:[waterRange]};bridgeRoutes.push(route);
-    const [waterStart,waterEnd]=waterRange,channelWidth=waterEnd-waterStart,numPiers=Math.max(2,Math.ceil(channelWidth/pierSpacing)),actualPierSpacing=channelWidth/(numPiers+1),approachLength=40,archStart=waterStart-approachLength,archEnd=waterEnd+approachLength;
-    const buildApproach=(spanStart,spanEnd,isLandSide)=>{const steps=Math.ceil((spanEnd-spanStart)/6);for(let i=0;i<steps;i++){const v0=spanStart+i*(spanEnd-spanStart)/steps,v1=spanStart+(i+1)*(spanEnd-spanStart)/steps,mid=(v0+v1)*.5,y=deckY,a=axis==='x'?[v0,y,fixed]:[fixed,y,v0],b=axis==='x'?[v1,y,fixed]:[fixed,y,v1];roadBeam(g,a,b,width,.22,paving,axis);const girderA=[a[0],a[1]-.22,a[2]],girderB=[b[0],b[1]-.22,b[2]];roadBeam(g,girderA,girderB,width-.8,1.4,mat('#858d8d'),axis);for(const side of [-1,1]){const barrierA=[a[0],a[1]+.5,a[2]],barrierB=[b[0],b[1]+.5,b[2]];roadBeam(g,barrierA,barrierB,.45,1.1,mat('#abb0a8'),axis,side*(width*.5-.225));const railA=[a[0],a[1]+1.43,a[2]],railB=[b[0],b[1]+1.43,b[2]];roadBeam(g,railA,railB,.14,.12,mat('#66787d'),axis,side*(width*.5-.225));}const centerlineA=[a[0],a[1]+.02,a[2]],centerlineB=[b[0],b[1]+.02,b[2]];for(const side of [-1,1]){roadBeam(g,centerlineA,centerlineB,.14,.035,laneMark,axis,side*.16);roadBeam(g,centerlineA,centerlineB,.12,.035,runwayMark,axis,side*6.9);const dashA=axis==='x'?[v0+(v1-v0)*.25,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.25],dashB=axis==='x'?[v0+(v1-v0)*.75,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.75];roadBeam(g,dashA,dashB,.14,.035,runwayMark,axis,side*2.7);}if(isLandSide&&mid>=spanStart+20){const pierInterval=20;if(Math.abs(mid-(spanStart+20))%pierInterval<3)addHighPier(axis,fixed,mid,y);}};};
-const buildArchSpan=()=>{const archWidth=archEnd-archStart,steps=Math.ceil(archWidth/4),channelCenter=(waterStart+waterEnd)*.5,halfChannelWidth=(waterEnd-waterStart)*.5+approachLength;for(let i=0;i<steps;i++){const v0=archStart+i*archWidth/steps,v1=archStart+(i+1)*archWidth/steps,mid=(v0+v1)*.5,distFromCenter=Math.abs(mid-channelCenter),archFactor=1-(distFromCenter/halfChannelWidth)*(distFromCenter/halfChannelWidth),archHeight=clearance*archFactor,y=deckY+archHeight,a=axis==='x'?[v0,y,fixed]:[fixed,y,v0],b=axis==='x'?[v1,y,fixed]:[fixed,y,v1];roadBeam(g,a,b,width,.22,paving,axis);const girderDepth=1.4+1.2*(1-archFactor),girderA=[a[0],a[1]-.22,a[2]],girderB=[b[0],b[1]-.22,b[2]];roadBeam(g,girderA,girderB,width-.8,girderDepth,mat('#858d8d'),axis);for(const side of [-1,1]){const barrierA=[a[0],a[1]+.5,a[2]],barrierB=[b[0],b[1]+.5,b[2]];roadBeam(g,barrierA,barrierB,.45,1.1,mat('#abb0a8'),axis,side*(width*.5-.225));const railA=[a[0],a[1]+1.43,a[2]],railB=[b[0],b[1]+1.43,b[2]];roadBeam(g,railA,railB,.14,.12,mat('#66787d'),axis,side*(width*.5-.225));}const centerlineA=[a[0],a[1]+.02,a[2]],centerlineB=[b[0],b[1]+.02,b[2]];for(const side of [-1,1]){roadBeam(g,centerlineA,centerlineB,.14,.035,laneMark,axis,side*.16);roadBeam(g,centerlineA,centerlineB,.12,.035,runwayMark,axis,side*6.9);const dashA=axis==='x'?[v0+(v1-v0)*.25,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.25],dashB=axis==='x'?[v0+(v1-v0)*.75,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.75];roadBeam(g,dashA,dashB,.14,.035,runwayMark,axis,side*2.7);}}for(let p=1;p<=numPiers;p++){const pierPos=waterStart+p*actualPierSpacing,distFromCenter=Math.abs(pierPos-channelCenter),pierArchFactor=1-(distFromCenter/halfChannelWidth)*(distFromCenter/halfChannelWidth),pierDeckY=deckY+clearance*pierArchFactor;addHighPier(axis,fixed,pierPos,pierDeckY,true);}};
-    const addHighPier=(axis,fixed,coordinate,deckBottom,isNavPier=false)=>{const seabed=-9,columnHeight=deckBottom-1.28-(seabed+1),pierWidth=isNavPier?6.0:4.8,pierDepth=isNavPier?6.0:4.8;for(const side of [-1,1]){const x=axis==='x'?coordinate:fixed+side*9.25,z=axis==='x'?fixed+side*9.25:coordinate;box(g,x,seabed+.5,z,pierWidth,1,pierDepth,'#757d7d');box(g,x,(seabed+1+deckBottom-1.28)*.5,z,2.0,columnHeight,2.0,'#757d7d');box(g,x,deckBottom-1.28-.3,z,pierWidth+.6,.6,pierDepth+.6,'#757d7d');}if(axis==='x')box(g,coordinate,deckBottom-1.28-.3,fixed,4.0,.6,24,'#757d7d');else box(g,fixed,deckBottom-1.28-.3,coordinate,24,.6,4.0,'#757d7d');};
-    buildApproach(startCoord,archStart,true);buildArchSpan();buildApproach(archEnd,endCoord,true);
-    const shoulder=width*.5-.225;if(axis==='x'){const top=deckY+clearance+1.4;for(const side of [-1,1])solids.push({x:(startCoord+endCoord)*.5,z:fixed+side*shoulder,w:(endCoord-startCoord)*.5,d:.24,h:top});}else{for(const side of [-1,1])solids.push({x:fixed+side*shoulder,z:(waterStart+waterEnd)*.5,w:.24,d:(waterEnd-waterStart)*.5,h:8});}
+  const buildSection=(axis,fixed,start,end,width)=>{
+    const [aCoord,aY]=start,[bCoord,bY]=end,
+      a=axis==='x'?[aCoord,aY,fixed]:[fixed,aY,aCoord],
+      b=axis==='x'?[bCoord,bY,fixed]:[fixed,bY,bCoord];
+    roadBeam(g,a,b,width,.22,paving,axis);
+    roadBeam(g,[a[0],a[1]-.22,a[2]],[b[0],b[1]-.22,b[2]],width-.8,1.4,beamMaterial,axis);
+    for(const side of [-1,1]){
+      roadBeam(g,[a[0],a[1]+.5,a[2]],[b[0],b[1]+.5,b[2]],.45,1.1,barrierMaterial,axis,side*(width*.5-.225));
+      roadBeam(g,[a[0],a[1]+1.43,a[2]],[b[0],b[1]+1.43,b[2]],.14,.12,railMaterial,axis,side*(width*.5-.225));
+      roadBeam(g,[a[0],a[1]+.02,a[2]],[b[0],b[1]+.02,b[2]],.12,.035,runwayMark,axis,side*6.9);
+    }
+    roadBeam(g,[a[0],a[1]+.02,a[2]],[b[0],b[1]+.02,b[2]],.14,.035,laneMark,axis,.16);
   };
-  // Pacifica Bay Bridge (mainland to first island chain) - deck at y=0.01
-  buildHighBridge('x',96,-2,213,0.01,[30.5,213],16.2,9.0,32);
-  // North-south spine bridges connecting islands at centerX=313
-  // Updated for new island positions: jungle(-144), dune(96), snow(336), future(576)
-  buildHighBridge('z',313,-144-94,96-72,1.9,[-48,2],16.2,9.0,32);
-  buildHighBridge('z',313,96+72,336-94,1.9,[190,218],16.2,9.0,32);
-  buildHighBridge('z',313,336+72,576-94,1.9,[406,434],16.2,9.0,32);
-  // East-west bridges to outer islands (centerX=580)
-  buildHighBridge('x',-144,388,580,1.9,[413,460],16.2,9.0,32);
-  buildHighBridge('x',96,388,580,1.9,[413,460],16.2,9.0,32);
-  buildHighBridge('x',336,388,580,1.9,[413,460],16.2,9.0,32);
+  const buildHighBridge=(axis,fixed,startCoord,endCoord,landStartY,landEndY,waterRange)=>{
+    const [waterStart,waterEnd]=waterRange;
+    bridgeRoutes.push({axis,fixed,width,points:[
+      axis==='x'?[startCoord,landStartY,fixed]:[fixed,landStartY,startCoord],
+      axis==='x'?[waterStart,deckY,fixed]:[fixed,deckY,waterStart],
+      axis==='x'?[waterEnd,deckY,fixed]:[fixed,deckY,waterEnd],
+      axis==='x'?[endCoord,landEndY,fixed]:[fixed,landEndY,endCoord]
+    ]});
+    buildSection(axis,fixed,[startCoord,landStartY],[waterStart,deckY],width);
+    buildSection(axis,fixed,[waterStart,deckY],[waterEnd,deckY],width);
+    buildSection(axis,fixed,[waterEnd,deckY],[endCoord,landEndY],width);
+    const floorLength=waterEnd-waterStart+12,floorWidth=56,
+      floorX=axis==='x'?(waterStart+waterEnd)*.5:fixed,
+      floorZ=axis==='x'?fixed:(waterStart+waterEnd)*.5;
+    roadBox(g,floorX,-5.5,floorZ,axis==='x'?floorLength:floorWidth,.5,axis==='x'?floorWidth:floorLength,seabedMaterial);
+    for(let position=waterStart+32;position<waterEnd;position+=32)addHighPier(axis,fixed,position);
+  };
+  buildHighBridge('x',96,-2,231,.1,2,[30.5,213]);
+  buildHighBridge('z',313,-72,36,2,2,[-50,2]);
+  buildHighBridge('z',313,168,264,2,2,[190,242]);
+  buildHighBridge('z',313,408,504,2,2,[430,482]);
+  for(const z of [-144,96,336])buildHighBridge('x',z,393,500,2,2,[413,480]);
   for(const i of islands){
     const cx=i.centerX,z=i.z,terrainType=i.id==='snow'?'alpine':i.id,
       city=new T.Group(),solidStart=solids.length,
@@ -301,9 +367,11 @@ const buildArchSpan=()=>{const archWidth=archEnd-archStart,steps=Math.ceil(archW
         {minX:cx-15,maxX:cx+15,minZ:z+64,maxZ:z+100},
         {minX:cx-15,maxX:cx+15,minZ:z-100,maxZ:z-64}
       ]:[];
+    const roadX=[-80,-40,0,40,80].map(offset=>cx+offset),
+      roadZ=[-72,-36,0,36,72].map(offset=>z+offset),occupied=[];
     addOrthogonalRoadGrid(city,{
-      xLines:[-80,-40,0,40,80].map(offset=>cx+offset),
-      zLines:[-72,-36,0,36,72].map(offset=>z+offset),
+      xLines:roadX,
+      zLines:roadZ,
       minX:cx-82,maxX:cx+82,minZ:z-82,maxZ:z+82,
       xLineRange:x=>[z-(i.centerX===313&&Math.abs(x-cx)<.1?72:74),
         z+(i.centerX===313&&Math.abs(x-cx)<.1?72:74)],
@@ -321,10 +389,19 @@ const buildArchSpan=()=>{const archWidth=archEnd-archStart,steps=Math.ceil(archW
     }
     const develop=(x,zz,n)=>{
       const height=(i.id==='future'||i.id==='obsidian'?24:12)+(n*11%21),
-        width=10+(n%3)*2.4,depth=10+((n+1)%3)*2.1,
+        width=10+(n%3)*1.2,depth=9+((n+1)%3)*1.4,
         runwayOverlap=Math.abs(x-runwayX)<18+width*.5&&Math.abs(zz-runwayZ)<64+depth*.5,
-        apronOverlap=Math.abs(x-(runwayX-18))<14+width*.5&&Math.abs(zz-runwayZ)<10+depth*.5;
-      if(runwayOverlap||apronOverlap)return;
+        apronOverlap=Math.abs(x-(runwayX-18))<14+width*.5&&Math.abs(zz-runwayZ)<10+depth*.5,
+        stationOverlap=stops.some(s=>{
+          if(s.region!==i.id||!['rail','bus'].includes(s.type))return false;
+          const sw=s.type==='rail'?15:4.6,sd=s.type==='rail'?9:3.25;
+          return Math.abs(x-s.x)<(width+.42+sw)*.5+1&&Math.abs(zz-s.z)<(depth+.42+sd)*.5+1;
+        }),
+        buildingOverlap=occupied.some(p=>Math.abs(x-p.x)<(width+.42+p.w)*.5+1&&Math.abs(zz-p.z)<(depth+.42+p.d)*.5+1);
+      if(runwayOverlap||apronOverlap||stationOverlap||buildingOverlap||
+        !clearOfRoads(x,zz,width+.42,depth+.42,roadX,roadZ)||
+        !surfaceRailClearance(x,zz,width+.42,depth+.42))return;
+      occupied.push({x,z:zz,w:width+.42,d:depth+.42});
       const facade=n%4===0?masonryMaterial:facadeMaterial,building=new T.Mesh(boxGeo,facade);
       building.position.set(x,height*.5,zz);building.scale.set(width,height,depth);city.add(building);
       // Rooftop parapet - use masonry PBR material
@@ -353,14 +430,8 @@ const buildArchSpan=()=>{const archWidth=archEnd-archStart,steps=Math.ceil(archW
       }
     };
     let lot=0;const forest=[];
-    for(const xOffset of [-60,-20,20,60])for(const zOffset of [-54,-18,18,54]){
-      if(Math.abs(xOffset)===20&&Math.abs(zOffset)===18){
-        for(const [dx,dz] of [[-7,-7],[-7,7],[7,-7],[7,7]])
-          forest.push({x:cx+xOffset+dx,z:z+zOffset+dz,scale:.82+((lot++)%4)*.08});
-        continue;
-      }
-      for(const [dx,dz] of [[-7,-7],[7,7]])develop(cx+xOffset+dx,z+zOffset+dz,lot++);
-    }
+    for(const xOffset of [-60,-20,20,60])for(const zOffset of [-54,-18,18,54])
+      develop(cx+xOffset,z+zOffset,lot++);
     roadBox(city,runwayX,.16,runwayZ,18,.18,116,paving);
     for(const side of [-1,1]){
       roadBox(city,runwayX+side*8.15,.265,runwayZ,.18,.035,109,runwayMark);
@@ -509,6 +580,11 @@ function makeStops(g){
   for(const s of stops){
     const {x,z,type}=s,c=shade[type],major=['airport','rail','ferry','sports','hospital','arena','bank'].includes(type);
     if(type==='good')continue;
+    if(s.region==='main'&&['rail','bus'].includes(type)){
+      const w=type==='rail'?15:4.6,d=type==='rail'?9:3.25;
+      if(!clearOfRoads(x,z,w+.5,d+.5,[-144,-96,-48,0],[-144,-96,-48,0,48,96]))
+        throw new Error(`Transit station ${s.name} overlaps a mainland road setback.`);
+    }
     const first=g.children.length,offset=islandSurfaceY(x,z),
       lift=()=>{if(offset)for(let index=first;index<g.children.length;index++)g.children[index].position.y+=offset};
     if(type==='bus'&&s.id!=='boardwalk'){
@@ -549,7 +625,7 @@ function makeStops(g){
         box(g,x+a*5.4,1.38,z-1.15,.89,.53,.10,c,true);
         for(let q=-1;q<=1;q++)box(g,x+a*4.4+q*1.1,.09,z+2.7,.72,.03,.09,'#f5ce91',true);
       }
-      sign(g,x,2.5,z-d*.49,s.id==='depot'?'COASTAL RAIL · WESTBOUND':'METRO · TICKET HALL',c);
+      sign(g,x,2.5,z-d*.49,s.id==='depot'?'COASTAL RAIL · WESTBOUND':'METRO · TICKET HALL',c,Math.PI);
     }
     if(type==='hospital'||type==='arena'){
       box(g,x+6.4,2.8,z,7.4,5.6,14,type==='hospital'?'#b5cbd0':'#71728c');

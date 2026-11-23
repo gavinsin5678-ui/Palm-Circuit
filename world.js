@@ -6,6 +6,9 @@ export const runway = {x:-195,z:92,width:22,north:-161,south:117};
 export const runwayWest = {x:-236,z:84,width:18,north:-154,south:110};
 export const tileSize = 144, edge = -168;
 export const gridCell = n=>Math.floor((n-edge)/tileSize);
+export const clearOfRoads=(x,z,w,d,xLines,zLines,xRoadWidth=14.8,zRoadWidth=13.2,setback=4)=>
+  !xLines.some(line=>Math.abs(x-line)<=xRoadWidth*.5+setback+w*.5) &&
+  !zLines.some(line=>Math.abs(z-line)<=zRoadWidth*.5+setback+d*.5);
 const airportBounds={minX:-248,maxX:-169,minZ:-165,maxZ:119};
 const inAirport=(x,z)=>x>=airportBounds.minX&&x<=airportBounds.maxX&&z>=airportBounds.minZ&&z<=airportBounds.maxZ;
 export const onStreet = (x,z)=>Math.abs((((x+24)%48)+48)%48-24)<7.7 ||
@@ -652,28 +655,12 @@ function atmosphere(scene,lowSpec=false){
     vertexShader:`uniform float clock;varying vec3 v;
     float waveAt(vec2 p,float t){
       float wave=-.13+sin(p.y*.34+t*1.1)*.18+sin(p.x*.2+p.y*.13-t*.82)*.12+sin(p.x*.63-p.y*.46+t*1.7)*.035;
-      float channel=smoothstep(25.,30.,p.x)*(1.-smoothstep(213.,218.,p.x))*
-        (1.-smoothstep(8.,11.,abs(p.y-96.)));
-      float h=mix(wave,min(wave,-1.65),channel);
-      
-      // Clamp wave height under bridges to prevent wave overlap (>=0.5m below deck)
-      // Pacifica Bay Bridge: x in [-2,213], z near 96, deckY=0.01
-      if(p.x>=-2. && p.x<=213. && abs(p.y-96.)<=12.) h=min(h,0.01-0.5);
-      // North-south spine bridges at x=313, deckY=1.9
-      if(abs(p.x-313.)<=12.){
-        // Jungle-Dune channel: z in [-238,24]
-        if(p.y>=-238. && p.y<=24.) h=min(h,1.9-0.5);
-        // Dune-Snow channel: z in [168,242]
-        if(p.y>=168. && p.y<=242.) h=min(h,1.9-0.5);
-        // Snow-Future channel: z in [314,482]
-        if(p.y>=314. && p.y<=482.) h=min(h,1.9-0.5);
-      }
-      // East-west bridges to outer islands at z=-144, 96, 336, deckY=1.9
-      if(p.x>=388. && p.x<=580.){
-        if(abs(p.y+144.)<=12.) h=min(h,1.9-0.5); // Obsidian bridge
-        if(abs(p.y-96.)<=12.) h=min(h,1.9-0.5);   // Bamboo bridge
-        if(abs(p.y-336.)<=12.) h=min(h,1.9-0.5);  // Atoll bridge
-      }
+      float h=wave;
+      if(p.x>=30.5&&p.x<=213.&&abs(p.y-96.)<=8.1)h=min(h,7.);
+      if(abs(p.x-313.)<=8.1&&((p.y>=-50.&&p.y<=2.)||
+          (p.y>=190.&&p.y<=242.)||(p.y>=430.&&p.y<=482.)))h=min(h,7.);
+      if(p.x>=413.&&p.x<=480.&&
+          (abs(p.y+144.)<=8.1||abs(p.y-96.)<=8.1||abs(p.y-336.)<=8.1))h=min(h,7.);
       return h;
     }
     void main(){
@@ -814,7 +801,7 @@ function addAirport(scene,solids,paving){
   }
   sign(scene,'PACIFICA AIRFIELD',-210.8,4.1,69);
 }
-function makeTile(i,j,paving){
+function makeTile(i,j,paving,railClearance){
   const ox=edge+i*tileSize,oz=edge+j*tileSize,coast=i===1;
   const group=new T.Group(),colliders=[],people=[],variant=((i*11+j*7)%6+6)%6;
   group.position.set(ox,0,oz);seed=(Math.imul(i,0x9e3779b1)^Math.imul(j,0x85ebca6b)^0x32c6e15d)>>>0;
@@ -835,6 +822,7 @@ function makeTile(i,j,paving){
       minX:r.x-r.width*.5-ox,maxX:r.x+r.width*.5-ox,
       minZ:r.north-oz,maxZ:r.south-oz
     })):[];
+  const horizontal=[24,72,120],occupied=[];
   addOrthogonalRoadGrid(group,{xLines:vertical,zLines:[24,72,120],minX:0,maxX:end,minZ:0,maxZ:144,
     roadMaterial:paving,roadY:.01,xRoadWidth:14.8,zRoadWidth:13.2,exclusions:cutouts});
   const lots=coast?[9]:[6,39,57,87,104,137];
@@ -847,10 +835,22 @@ function makeTile(i,j,paving){
       tree(x,z,.83+rand()*.34,ox,oz);
       continue;
     }
-    const w=x<10||x>130?7+rand()*4:10+rand()*6, d=z<10||z>130?8+rand()*3:10+rand()*6;
+    const w=x<10||x>130?7+rand()*2:9+rand()*3, d=z<10||z>130?8+rand()*2:9+rand()*3;
+    let site=null,best=Infinity;
+    for(let dx=-32;dx<=32;dx+=2)for(let dz=-32;dz<=32;dz+=2){
+      const px=x+dx,pz=z+dz,distance=dx*dx+dz*dz;
+      if(distance>=best||px-w*.5<1||px+w*.5>end-1||pz-d*.5<1||pz+d*.5>143)continue;
+      if(!clearOfRoads(px,pz,w+.4,d+.4,vertical,horizontal))continue;
+      if(airport&&inAirport(ox+px,oz+pz))continue;
+      if(!railClearance(ox+px,oz+pz,w+.4,d+.4))continue;
+      if(occupied.some(p=>Math.abs(px-p.x)<(w+.4+p.w)*.5+1&&Math.abs(pz-p.z)<(d+.4+p.d)*.5+1))continue;
+      best=distance;site={x:px,z:pz};
+    }
+    if(!site)continue;
+    occupied.push({x:site.x,z:site.z,w:w+.4,d:d+.4});
     const h=modern?14+rand()*35:4.2+rand()*(variant===3?10:5.5);
-    const owner=buildingId(ox+x,oz+z),door=building(x,z,w,d,h,pick(modern?['#879aa8','#96aeb4','#aeb4bd','#8397a5']:['#d8b29e','#d8c6af','#aac7c3','#bea7b9','#adc4af']),modern?0:1,true,owner);
-    const collider=property(ox+x,oz+z,w,d,h+(modern?3.4:1.7),{...door,doorX:ox+door.doorX,doorZ:oz+door.doorZ},modern?'business':door.variant%5===1?'shop':'home',null,true);
+    const owner=buildingId(ox+site.x,oz+site.z),door=building(site.x,site.z,w,d,h,pick(modern?['#879aa8','#96aeb4','#aeb4bd','#8397a5']:['#d8b29e','#d8c6af','#aac7c3','#bea7b9','#adc4af']),modern?0:1,true,owner);
+    const collider=property(ox+site.x,oz+site.z,w,d,h+(modern?3.4:1.7),{...door,doorX:ox+door.doorX,doorZ:oz+door.doorZ},modern?'business':door.variant%5===1?'shop':'home',null,true);
     if(!destroyedBuildings.has(owner))colliders.push(collider);
   }
   if(!airport){
@@ -861,7 +861,7 @@ function makeTile(i,j,paving){
   bake(group);
   return {group,colliders,people};
 }
-function createStream(scene,paving,baseSolids,ocean){
+function createStream(scene,paving,baseSolids,ocean,railClearance){
   const tiles=new Map();
   const key=(i,j)=>`${i}/${j}`;
   const core=(i,j)=>i>=0&&i<=1&&j>=0&&j<=1;
@@ -870,7 +870,7 @@ function createStream(scene,paving,baseSolids,ocean){
   const addTile=(i,j)=>{
     const id=key(i,j);
     if(core(i,j)||tiles.has(id))return;
-    const t=makeTile(i,j,paving);tiles.set(id,t);scene.add(t.group);
+    const t=makeTile(i,j,paving,railClearance);tiles.set(id,t);scene.add(t.group);
   };
   function sync(x,z,flying,boot=false){
     const ix=Math.min(1,gridCell(x)),iz=gridCell(z),range=flying?3:2;
@@ -967,7 +967,7 @@ function createStream(scene,paving,baseSolids,ocean){
   }
   return {sync,hit,nearby,strike,damageAt,count:()=>tiles.size,destroyed:()=>destroyedBuildings.size};
 }
-export function createWorld({lowSpec=false}={}){
+export function createWorld({lowSpec=false,buildingClearance=()=>true}={}){
   seed=10;
   initSurfaceMaterials();
   const scene=new T.Scene();scene.fog=new T.FogExp2('#ae8991',.0031);
@@ -985,30 +985,35 @@ export function createWorld({lowSpec=false}={}){
   const paving=roadMaterial();
   addOrthogonalRoadGrid(scene,{xLines:roadsX,zLines:roadsZ,minX:-168,maxX:12,minZ:-168,maxZ:120,
     roadMaterial:paving,roadY:.01,xRoadWidth:14.8,zRoadWidth:13.2});
-  const boardwalkBuildings=[[-15,69,7.6,'#83bfb9'],[-16,32,9.1,'#e3b19b'],[-16,-16,10.3,'#b3b0be'],[-17,-64,11.4,'#d8bcaa'],[-17,-111,9.5,'#9bbdbb']];
+  const boardwalkBuildings=[[-20,69,7.6,'#83bfb9'],[-20,27,9.1,'#e3b19b'],[-20,-20,10.3,'#b3b0be'],[-20,-70,11.4,'#d8bcaa'],[-20,-118,9.5,'#9bbdbb']];
+  const mainRoadX=roadsX,mainRoadZ=roadsZ;
   for(let i=0;i<roadsX.length-1;i++) for(let j=0;j<roadsZ.length-1;j++){
     const x=roadsX[i]+24,z=roadsZ[j]+24;
     terrainGrid(scene,x,z,33,33,10,10,'city',.025);
-    for(const [dx,dz] of [[-8,-8],[8,8]]){
-      const deco=i===2||rand()<.3,w=10+rand()*4,d=10+rand()*5;
+    for(const [dx,dz] of [[-6,-6],[6,6]]){
+      const deco=i===2||rand()<.3,w=10+rand()*2.2,d=10+rand()*3.2;
       const h=deco?4.8+rand()*7:14+rand()*27;
       const tint=pick(deco?['#dfad9c','#d9c5ae','#acc9c6','#c2a7b6','#afd0ca']:['#8597a2','#adb8be','#93a1af','#b6b2b1']);
       // Reserve the named storefronts and the sidewalk in front of their doors.
       if(boardwalkBuildings.some(([bx,bz])=>Math.abs(x+dx-bx)<w/2+6.8&&
         z+dz+d/2>bz-7.25&&z+dz-d/2<bz+11.2))continue;
+      if(!clearOfRoads(x+dx,z+dz,w+.4,d+.4,mainRoadX,mainRoadZ)||
+        !buildingClearance(x+dx,z+dz,w+.4,d+.4))continue;
       const owner=buildingId(x+dx,z+dz),door=building(x+dx,z+dz,w,d,h,tint,deco?1:0,false,owner);
       solids.push(property(x+dx,z+dz,w,d,h+(deco?1.7:3.4),door,deco?(door.variant%4===1?'shop':'home'):'business',null,true));
     }
     tree(x+13,z-12,.69);tree(x-13,z+12,.76);
   }
   for(const [x,z,h,c] of boardwalkBuildings){
+    if(!clearOfRoads(x,z,12.4,13.4,mainRoadX,mainRoadZ)||
+      !buildingClearance(x,z,12.4,13.4))throw new Error(`Boardwalk building site overlaps a road or transit right-of-way at ${x},${z}.`);
     const owner=buildingId(x,z),door=building(x,z,12,13,h,c,1,false,owner);
-    const name=z===69?'Your Home':z===32?'Miramar Market':z===-16?'Sunset Works':null;
-    solids.push(property(x,z,12,13,h+1.7,door,z===32?'shop':z===-16?'business':'home',name,true));
+    const name=z===69?'Your Home':z===27?'Miramar Market':z===-20?'Sunset Works':null;
+    solids.push(property(x,z,12,13,h+1.7,door,z===27?'shop':z===-20?'business':'home',name,true));
     const pathLength=9.4+door.doorX;
     plane((door.doorX-9.4)/2,.037,door.doorZ+1.32,Math.abs(pathLength),2.5,'#aeaca0');
   }
-  for(const [text,y,z] of [['PACIFICA',4.9,69],['MIRAMAR',4.8,32],['SUNSET',5.3,-16]]) sign(scene,text,-8.91,y,z);
+  for(const [text,y,z] of [['PACIFICA',4.9,69],['MIRAMAR',4.8,27],['SUNSET',5.3,-20]]) sign(scene,text,-8.91,y,z);
   for(let z=-157;z<=121;z+=9) {
     if(!roadsZ.some(zz=>Math.abs(z-zz)<7)) palm(10.1+rand()*1.75,z,.88+rand()*.25);
     if(!roadsZ.some(zz=>Math.abs(z-zz)<8)&&Math.round(z/9)%2===0) palm(-9.1-rand(),z+.9,.79+rand()*.19);
@@ -1032,7 +1037,7 @@ export function createWorld({lowSpec=false}={}){
   }
   addAirport(scene,solids,paving);
   bake(scene);
-  const stream=createStream(scene,paving,solids,sky.ocean);
+  const stream=createStream(scene,paving,solids,sky.ocean,buildingClearance);
   const playerShadow=shadow(scene);
   const player=makeCar('#57c6b4',true);scene.add(player.car);
   const sport=makeCar('#e67d62',true);sport.car.scale.set(1.07,.82,1.10);scene.add(sport.car);

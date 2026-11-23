@@ -281,16 +281,65 @@ function unregisterInstances(group){
   }
 }
 function roadMaterial(){
-  const cvs=document.createElement('canvas');cvs.width=cvs.height=128;
-  const c=cvs.getContext('2d');c.fillStyle='#292e34';c.fillRect(0,0,128,128);
-  for(let i=0;i<5200;i++){
-    const v=52+Math.floor(rand()*58);c.fillStyle=`rgba(${v},${v},${v},.35)`;
-    c.fillRect(rand()*128,rand()*128,rand()<.07?3:1,1);
+  const cvs=document.createElement('canvas');cvs.width=cvs.height=256;
+  const c=cvs.getContext('2d');
+  
+  // Base dark asphalt - deep charcoal with subtle warm undertones
+  c.fillStyle='#1a1d21';c.fillRect(0,0,256,256);
+  
+  // Aggregate grain - multi-scale noise for realistic asphalt texture
+  for(let i=0;i<12000;i++){
+    const v=35+Math.floor(rand()*45);
+    const alpha=0.15+rand()*0.25;
+    c.fillStyle=`rgba(${v},${v},${v},${alpha})`;
+    const size=rand()<0.08?3:rand()<0.25?2:1;
+    c.fillRect(rand()*256,rand()*256,size,size);
   }
+  
+  // Larger aggregate stones (visible at distance)
+  for(let i=0;i<800;i++){
+    const v=45+Math.floor(rand()*35);
+    c.fillStyle=`rgba(${v},${v},${v},${0.2+rand()*0.2})`;
+    const x=rand()*256, y=rand()*256, r=1+Math.floor(rand()*2);
+    c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();
+  }
+  
+  // Subtle tire wear strips (darker longitudinal streaks)
+  for(let i=0;i<12;i++){
+    const y=Math.floor(rand()*256);
+    const v=20+Math.floor(rand()*15);
+    c.fillStyle=`rgba(${v},${v},${v},${0.08+rand()*0.06})`;
+    c.fillRect(0,y,256,1+Math.floor(rand()*2));
+  }
+  
+  // Oil stains / surface variations
+  for(let i=0;i<30;i++){
+    const x=rand()*256, y=rand()*256;
+    const r=3+rand()*8;
+    const v=10+Math.floor(rand()*20);
+    const gradient=c.createRadialGradient(x,y,0,x,y,r);
+    gradient.addColorStop(0,`rgba(${v},${v},${v},0.15)`);
+    gradient.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle=gradient;
+    c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();
+  }
+  
   const texture=new T.CanvasTexture(cvs);texture.colorSpace=T.SRGBColorSpace;
-  texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.repeat.set(5,5);texture.anisotropy=4;
-  const detail=detailMap(317,7),material=mat('#ffffff',{map:texture,roughness:.92,roughnessMap:detail,bumpMap:detail,bumpScale:.012});
-  material.userData.receiveShadow=true;return material;
+  texture.wrapS=texture.wrapT=T.RepeatWrapping;texture.repeat.set(8,8);texture.anisotropy=8;
+  
+  // High-detail roughness/bump map
+  const detail=detailMap(317,12);
+  
+  const material=mat('#ffffff',{
+    map:texture,
+    roughness:.94,
+    roughnessMap:detail,
+    bumpMap:detail,
+    bumpScale:.018,
+    metalness:.02
+  });
+  material.userData.receiveShadow=true;
+  return material;
 }
 const gridRoadGeometry=new T.BoxGeometry();
 let gridRoadMaterials;
@@ -597,15 +646,35 @@ function atmosphere(scene,lowSpec=false){
   const oceanSegments=lowSpec?64:128;
   const ocean=new T.Mesh(new T.PlaneGeometry(1800,1800,oceanSegments,oceanSegments),new T.ShaderMaterial({
     uniforms:{clock:{value:0},normalMap:{value:waveNormalTexture()},islandCenters:{value:[
-      new T.Vector3(313,-120,0),new T.Vector3(313,96,0),new T.Vector3(313,312,0),new T.Vector3(313,528,0),
-      new T.Vector3(560,-120,0),new T.Vector3(560,96,0),new T.Vector3(560,312,0)
+      new T.Vector3(313,-144,0),new T.Vector3(313,96,0),new T.Vector3(313,336,0),new T.Vector3(313,576,0),
+      new T.Vector3(580,-144,0),new T.Vector3(580,96,0),new T.Vector3(580,336,0)
     ]}},
     vertexShader:`uniform float clock;varying vec3 v;
     float waveAt(vec2 p,float t){
       float wave=-.13+sin(p.y*.34+t*1.1)*.18+sin(p.x*.2+p.y*.13-t*.82)*.12+sin(p.x*.63-p.y*.46+t*1.7)*.035;
       float channel=smoothstep(25.,30.,p.x)*(1.-smoothstep(213.,218.,p.x))*
         (1.-smoothstep(8.,11.,abs(p.y-96.)));
-      return mix(wave,min(wave,-1.65),channel);
+      float h=mix(wave,min(wave,-1.65),channel);
+      
+      // Clamp wave height under bridges to prevent wave overlap (>=0.5m below deck)
+      // Pacifica Bay Bridge: x in [-2,213], z near 96, deckY=0.01
+      if(p.x>=-2. && p.x<=213. && abs(p.y-96.)<=12.) h=min(h,0.01-0.5);
+      // North-south spine bridges at x=313, deckY=1.9
+      if(abs(p.x-313.)<=12.){
+        // Jungle-Dune channel: z in [-238,24]
+        if(p.y>=-238. && p.y<=24.) h=min(h,1.9-0.5);
+        // Dune-Snow channel: z in [168,242]
+        if(p.y>=168. && p.y<=242.) h=min(h,1.9-0.5);
+        // Snow-Future channel: z in [314,482]
+        if(p.y>=314. && p.y<=482.) h=min(h,1.9-0.5);
+      }
+      // East-west bridges to outer islands at z=-144, 96, 336, deckY=1.9
+      if(p.x>=388. && p.x<=580.){
+        if(abs(p.y+144.)<=12.) h=min(h,1.9-0.5); // Obsidian bridge
+        if(abs(p.y-96.)<=12.) h=min(h,1.9-0.5);   // Bamboo bridge
+        if(abs(p.y-336.)<=12.) h=min(h,1.9-0.5);  // Atoll bridge
+      }
+      return h;
     }
     void main(){
       vec4 w=modelMatrix*vec4(position,1.);

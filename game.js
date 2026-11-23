@@ -87,7 +87,37 @@ const waveHeightAt=(x,z,time)=>{
     const t=minmax((value-a)/(b-a),0,1);return t*t*(3-2*t);
   };
   const channel=smooth(25,30,x)*(1-smooth(213,218,x))*(1-smooth(8,11,Math.abs(z-96)));
-  return wave+(Math.min(wave,-1.65)-wave)*channel;
+  let h=wave+(Math.min(wave,-1.65)-wave)*channel;
+  
+  // Clamp wave height under bridges to prevent wave overlap (>=0.5m below deck)
+  // Pacifica Bay Bridge: x in [-2,213], z near 96, deckY=0.01, clearance 9m -> clamp to <= -0.49
+  if(x>=-2 && x<=213 && Math.abs(z-96)<=12){
+    const maxWave=0.01-0.5; // deckY - 0.5m
+    h=Math.min(h,maxWave);
+  }
+  // North-south spine bridges at x=313, deckY=1.9, clearance 9m -> clamp to <= 1.4
+  if(Math.abs(x-313)<=12){
+    // Jungle-Dune channel: z in [-238,24]
+    if(z>=-238 && z<=24){
+      h=Math.min(h,1.9-0.5);
+    }
+    // Dune-Snow channel: z in [168,242]
+    if(z>=168 && z<=242){
+      h=Math.min(h,1.9-0.5);
+    }
+    // Snow-Future channel: z in [314,482]
+    if(z>=314 && z<=482){
+      h=Math.min(h,1.9-0.5);
+    }
+  }
+  // East-west bridges to outer islands at z=-144, 96, 336, deckY=1.9
+  // Bridge corridors: x in [388,580], z near -144, 96, 336
+  if(x>=388 && x<=580){
+    if(Math.abs(z+144)<=12) h=Math.min(h,1.9-0.5); // Obsidian bridge
+    if(Math.abs(z-96)<=12) h=Math.min(h,1.9-0.5);   // Bamboo bridge
+    if(Math.abs(z-336)<=12) h=Math.min(h,1.9-0.5);  // Atoll bridge
+  }
+  return h;
 };
 const solidHit=(x,z,y,r)=>world?.stream.hit(x,z,y,r)||world?.arch.hit(x,z,y,r);
 const nearProperties=(x,z)=>{const {properties,people}=world.stream.nearby(x,z);if(x>219)properties.push(...world.arch.properties);return {properties,people}};

@@ -3,13 +3,13 @@ import {person} from './life-world.js?v=articulated-physics';
 import {createTerrainPatch,addIslandForest,addOrthogonalRoadGrid,getBuildingMaterials} from './world.js?v=surface-detail';
 
 export const islands=[
-  {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',centerX:313,z:96,ground:'#c89959',rim:'#e9c084',road:'#675652',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},
-  {id:'jungle',name:'Canopy Key',tag:'JUNGLE ISLAND',centerX:313,z:-120,ground:'#48725a',rim:'#92a96b',road:'#435453',accent:'#9ceda7',about:'Rainforest towers, a botanical court and a treetop village.'},
-  {id:'snow',name:'Frostpeak',tag:'ALPINE ISLAND',centerX:313,z:312,ground:'#c9dce7',rim:'#e5f1ee',road:'#586b79',accent:'#a8dcff',about:'Blue ice ridges, snowy lodges and a high alpine sports club.'},
-  {id:'future',name:'Neon Meridian',tag:'FUTURE CITY',centerX:313,z:528,ground:'#393b58',rim:'#74668e',road:'#2f3a52',accent:'#f494eb',about:'Magenta skybridges, luminous towers and a prototype test district.'},
-  {id:'obsidian',name:'Volcanic Obsidian Ridge',tag:'VOLCANIC METROPOLIS',centerX:560,z:-120,ground:'#34373c',rim:'#706c68',road:'#323940',accent:'#ff8750',about:'Basalt canyons, geothermal towers and a dark industrial metropolis.'},
-  {id:'bamboo',name:'Emerald Bamboo Highlands',tag:'BAMBOO HIGHLANDS',centerX:560,z:96,ground:'#547b55',rim:'#a5b76d',road:'#455c4b',accent:'#a7e58d',about:'Terraced mountain districts, pagodas and forested hillside avenues.'},
-  {id:'atoll',name:'Solaris Coral Atoll',tag:'CORAL ATOLL',centerX:560,z:312,ground:'#d8c49b',rim:'#f2dfbd',road:'#5b5c5a',accent:'#ffd18b',about:'Coastal resort boulevards, marinas and sun-bleached Mediterranean blocks.'}
+  {id:'dune',name:'Saffron Dunes',tag:'DESERT ISLAND',centerX:313,z:96,ground:'#c89959',rim:'#e9c084',road:'#1a1d21',accent:'#ffba73',about:'Sandstone mesas, market arcades and a solar observatory.'},
+  {id:'jungle',name:'Canopy Key',tag:'JUNGLE ISLAND',centerX:313,z:-144,ground:'#48725a',rim:'#92a96b',road:'#1a1d21',accent:'#9ceda7',about:'Rainforest towers, a botanical court and a treetop village.'},
+  {id:'snow',name:'Frostpeak',tag:'ALPINE ISLAND',centerX:313,z:336,ground:'#c9dce7',rim:'#e5f1ee',road:'#1a1d21',accent:'#a8dcff',about:'Blue ice ridges, snowy lodges and a high alpine sports club.'},
+  {id:'future',name:'Neon Meridian',tag:'FUTURE CITY',centerX:313,z:576,ground:'#393b58',rim:'#74668e',road:'#1a1d21',accent:'#f494eb',about:'Magenta skybridges, luminous towers and a prototype test district.'},
+  {id:'obsidian',name:'Volcanic Obsidian Ridge',tag:'VOLCANIC METROPOLIS',centerX:580,z:-144,ground:'#34373c',rim:'#706c68',road:'#1a1d21',accent:'#ff8750',about:'Basalt canyons, geothermal towers and a dark industrial metropolis.'},
+  {id:'bamboo',name:'Emerald Bamboo Highlands',tag:'BAMBOO HIGHLANDS',centerX:580,z:96,ground:'#547b55',rim:'#a5b76d',road:'#1a1d21',accent:'#a7e58d',about:'Terraced mountain districts, pagodas and forested hillside avenues.'},
+  {id:'atoll',name:'Solaris Coral Atoll',tag:'CORAL ATOLL',centerX:580,z:336,ground:'#d8c49b',rim:'#f2dfbd',road:'#1a1d21',accent:'#ffd18b',about:'Coastal resort boulevards, marinas and sun-bleached Mediterranean blocks.'}
 ];
 export const mainland={id:'main',name:'Pacifica Bay',tag:'MAINLAND',z:96,accent:'#85f8d3',about:'The original coastal city, with Central Station, Runway 36 and the boardwalk.'};
 export const regions=[mainland,...islands];
@@ -36,8 +36,8 @@ export function roadHeightAt(x,z){
   }
   return undefined;
 }
-export const highwayAt=(x,z)=>(x>=-2&&x<=233&&Math.abs(z-96)<=8.1)||(Math.abs(x-313)<=8.1&&z>=-214&&z<=622)||
-  outerLinks.some(i=>(x>=388&&x<=480&&Math.abs(z-i.z)<=8.1)||(x>313&&x<388&&Math.abs(z-i.z)<=8.1));
+export const highwayAt=(x,z)=>(x>=-2&&x<=213&&Math.abs(z-96)<=8.1)||(Math.abs(x-313)<=8.1&&z>=-238&&z<=482)||
+  outerLinks.some(i=>(x>=388&&x<=580&&Math.abs(z-i.z)<=8.1));
 export const solidLand=(x,z)=>x<=30.45||!!islandAt(x,z)||highwayAt(x,z);
 export const islandRoadY=(x,z)=>{
   const island=islandAt(x,z);if(!island)return undefined;
@@ -269,61 +269,27 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     if(axis==='x')box(g,coordinate,deckBottom-.3,fixed,3.6,.6,21,'#858d8d');
     else box(g,fixed,deckBottom-.3,coordinate,21,.6,3.6,'#858d8d');
   };
-  const bridge=(axis,fixed,points,width=16.2,waterRanges=[])=>{
-    const route={axis,fixed,points,width,waterRanges};bridgeRoutes.push(route);
-    const pointAt=value=>{
-      let index=points.findIndex((point,i)=>i<points.length-1&&value<=points[i+1][axis==='x'?0:2]);
-      if(index<0)index=points.length-2;
-      const a=points[index],b=points[index+1],start=a[axis==='x'?0:2],end=b[axis==='x'?0:2],
-        t=Math.max(0,Math.min(1,(value-start)/(end-start)));
-      return a.map((v,k)=>v+(b[k]-v)*t);
-    };
-    const start=points[0][axis==='x'?0:2],end=points.at(-1)[axis==='x'?0:2],step=6,
-      boundaries=[start,...waterRanges.flatMap(([a,b])=>[a,b]),end]
-        .filter(value=>value>=start&&value<=end).sort((a,b)=>a-b);
-    let supportAt=start+11;
-    for(let span=1;span<boundaries.length;span++)for(let value=boundaries[span-1];value<boundaries[span];value+=step){
-      const next=Math.min(boundaries[span],value+step),mid=(value+next)*.5,a=pointAt(value),b=pointAt(next),
-        overWater=waterRanges.some(([a,b])=>mid>a&&mid<b);
-      if(axis==='x'||overWater){
-        roadBeam(g,a,b,width,.18,paving,axis);
-        const girderA=[a[0],a[1]-.18,a[2]],girderB=[b[0],b[1]-.18,b[2]];
-        roadBeam(g,girderA,girderB,width-.8,1.1,mat('#858d8d'),axis);
-        for(const side of [-1,1]){
-          const barrierA=[a[0],a[1]+.5,a[2]],barrierB=[b[0],b[1]+.5,b[2]];
-          roadBeam(g,barrierA,barrierB,.45,1.0,mat('#abb0a8'),axis,side*(width*.5-.225));
-          const railA=[a[0],a[1]+1.33,a[2]],railB=[b[0],b[1]+1.33,b[2]];
-          roadBeam(g,railA,railB,.14,.12,mat('#66787d'),axis,side*(width*.5-.225));
-        }
-        if(overWater&&mid>=supportAt){
-          addPiers(axis,fixed,mid,pointAt(mid)[1]);supportAt=mid+22;
-        }
-        const centerlineA=[a[0],a[1]+.015,a[2]],centerlineB=[b[0],b[1]+.015,b[2]];
-        for(const side of [-1,1]){
-          roadBeam(g,centerlineA,centerlineB,.14,.035,laneMark,axis,side*.16);
-          roadBeam(g,centerlineA,centerlineB,.12,.035,runwayMark,axis,side*6.9);
-          const dashA=pointAt(value+(next-value)*.25),dashB=pointAt(value+(next-value)*.75);
-          roadBeam(g,[dashA[0],dashA[1]+.02,dashA[2]],[dashB[0],dashB[1]+.02,dashB[2]],.14,.035,runwayMark,axis,side*2.7);
-        }
-      }
-    }
-    const shoulder=width*.5-.225;
-    if(axis==='x'){
-      const top=Math.max(...points.map(point=>point[1]))+1.4;
-      for(const side of [-1,1])solids.push({x:(start+end)*.5,z:fixed+side*shoulder,w:(end-start)*.5,d:.24,h:top});
-    }else{
-      for(const [lo,hi] of waterRanges)for(const side of [-1,1])
-        solids.push({x:fixed+side*shoulder,z:(lo+hi)*.5,w:.24,d:(hi-lo)*.5,h:8});
-    }
+  // High-clearance bridge with arched navigation spans (>=8.5m clearance, >=30m pier spacing)
+  const buildHighBridge=(axis,fixed,startCoord,endCoord,deckY,waterRange,width=16.2,clearance=9.0,pierSpacing=32)=>{
+    const route={axis,fixed,points:[[axis==='x'?startCoord:fixed,deckY,axis==='z'?startCoord:fixed],[axis==='x'?endCoord:fixed,deckY,axis==='z'?endCoord:fixed]],width,waterRanges:[waterRange]};bridgeRoutes.push(route);
+    const [waterStart,waterEnd]=waterRange,channelWidth=waterEnd-waterStart,numPiers=Math.max(2,Math.ceil(channelWidth/pierSpacing)),actualPierSpacing=channelWidth/(numPiers+1),approachLength=40,archStart=waterStart-approachLength,archEnd=waterEnd+approachLength;
+    const buildApproach=(spanStart,spanEnd,isLandSide)=>{const steps=Math.ceil((spanEnd-spanStart)/6);for(let i=0;i<steps;i++){const v0=spanStart+i*(spanEnd-spanStart)/steps,v1=spanStart+(i+1)*(spanEnd-spanStart)/steps,mid=(v0+v1)*.5,y=deckY,a=axis==='x'?[v0,y,fixed]:[fixed,y,v0],b=axis==='x'?[v1,y,fixed]:[fixed,y,v1];roadBeam(g,a,b,width,.22,paving,axis);const girderA=[a[0],a[1]-.22,a[2]],girderB=[b[0],b[1]-.22,b[2]];roadBeam(g,girderA,girderB,width-.8,1.4,mat('#858d8d'),axis);for(const side of [-1,1]){const barrierA=[a[0],a[1]+.5,a[2]],barrierB=[b[0],b[1]+.5,b[2]];roadBeam(g,barrierA,barrierB,.45,1.1,mat('#abb0a8'),axis,side*(width*.5-.225));const railA=[a[0],a[1]+1.43,a[2]],railB=[b[0],b[1]+1.43,b[2]];roadBeam(g,railA,railB,.14,.12,mat('#66787d'),axis,side*(width*.5-.225));}const centerlineA=[a[0],a[1]+.02,a[2]],centerlineB=[b[0],b[1]+.02,b[2]];for(const side of [-1,1]){roadBeam(g,centerlineA,centerlineB,.14,.035,laneMark,axis,side*.16);roadBeam(g,centerlineA,centerlineB,.12,.035,runwayMark,axis,side*6.9);const dashA=axis==='x'?[v0+(v1-v0)*.25,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.25],dashB=axis==='x'?[v0+(v1-v0)*.75,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.75];roadBeam(g,dashA,dashB,.14,.035,runwayMark,axis,side*2.7);}if(isLandSide&&mid>=spanStart+20){const pierInterval=20;if(Math.abs(mid-(spanStart+20))%pierInterval<3)addHighPier(axis,fixed,mid,y);}};};
+    const buildArchSpan=()=>{const archWidth=archEnd-archStart,steps=Math.ceil(archWidth/4);for(let i=0;i<steps;i++){const v0=archStart+i*archWidth/steps,v1=archStart+(i+1)*archWidth/steps,mid=(v0+v1)*.5,channelCenter=(waterStart+waterEnd)*.5,distFromCenter=Math.abs(mid-channelCenter),halfChannelWidth=(waterEnd-waterStart)*.5+approachLength,archFactor=1-(distFromCenter/halfChannelWidth)*(distFromCenter/halfChannelWidth),archHeight=clearance*archFactor,y=deckY+archHeight,a=axis==='x'?[v0,y,fixed]:[fixed,y,v0],b=axis==='x'?[v1,y,fixed]:[fixed,y,v1];roadBeam(g,a,b,width,.22,paving,axis);const girderDepth=1.4+1.2*(1-archFactor),girderA=[a[0],a[1]-.22,a[2]],girderB=[b[0],b[1]-.22,b[2]];roadBeam(g,girderA,girderB,width-.8,girderDepth,mat('#858d8d'),axis);for(const side of [-1,1]){const barrierA=[a[0],a[1]+.5,a[2]],barrierB=[b[0],b[1]+.5,b[2]];roadBeam(g,barrierA,barrierB,.45,1.1,mat('#abb0a8'),axis,side*(width*.5-.225));const railA=[a[0],a[1]+1.43,a[2]],railB=[b[0],b[1]+1.43,b[2]];roadBeam(g,railA,railB,.14,.12,mat('#66787d'),axis,side*(width*.5-.225));}const centerlineA=[a[0],a[1]+.02,a[2]],centerlineB=[b[0],b[1]+.02,b[2]];for(const side of [-1,1]){roadBeam(g,centerlineA,centerlineB,.14,.035,laneMark,axis,side*.16);roadBeam(g,centerlineA,centerlineB,.12,.035,runwayMark,axis,side*6.9);const dashA=axis==='x'?[v0+(v1-v0)*.25,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.25],dashB=axis==='x'?[v0+(v1-v0)*.75,y+.025,fixed]:[fixed,y+.025,v0+(v1-v0)*.75];roadBeam(g,dashA,dashB,.14,.035,runwayMark,axis,side*2.7);}}for(let p=1;p<=numPiers;p++){const pierPos=waterStart+p*actualPierSpacing,distFromCenter=Math.abs(pierPos-channelCenter),pierArchFactor=1-(distFromCenter/halfChannelWidth)*(distFromCenter/halfChannelWidth),pierDeckY=deckY+clearance*pierArchFactor;addHighPier(axis,fixed,pierPos,pierDeckY,true);}};
+    const addHighPier=(axis,fixed,coordinate,deckBottom,isNavPier=false)=>{const seabed=-9,columnHeight=deckBottom-1.28-(seabed+1),pierWidth=isNavPier?6.0:4.8,pierDepth=isNavPier?6.0:4.8;for(const side of [-1,1]){const x=axis==='x'?coordinate:fixed+side*9.25,z=axis==='x'?fixed+side*9.25:coordinate;box(g,x,seabed+.5,z,pierWidth,1,pierDepth,'#757d7d');box(g,x,(seabed+1+deckBottom-1.28)*.5,z,2.0,columnHeight,2.0,'#757d7d');box(g,x,deckBottom-1.28-.3,z,pierWidth+.6,.6,pierDepth+.6,'#757d7d');}if(axis==='x')box(g,coordinate,deckBottom-1.28-.3,fixed,4.0,.6,24,'#757d7d');else box(g,fixed,deckBottom-1.28-.3,coordinate,24,.6,4.0,'#757d7d');};
+    buildApproach(startCoord,archStart,true);buildArchSpan();buildApproach(archEnd,endCoord,true);
+    const shoulder=width*.5-.225;if(axis==='x'){const top=deckY+clearance+1.4;for(const side of [-1,1])solids.push({x:(startCoord+endCoord)*.5,z:fixed+side*shoulder,w:(endCoord-startCoord)*.5,d:.24,h:top});}else{for(const side of [-1,1])solids.push({x:fixed+side*shoulder,z:(waterStart+waterEnd)*.5,w:.24,d:(waterEnd-waterStart)*.5,h:8});}
   };
-  bridge('x',96,[[-2,.01,96],[213,.01,96]],16.2,[[30.5,213]]);
-  const spine=[];
-  for(const island of islands.filter(item=>item.centerX===313).sort((a,b)=>a.z-b.z)){
-    spine.push([313,6.5,island.z-94],[313,2.0,island.z-72],[313,2.0,island.z+72],[313,6.5,island.z+94]);
-  }
-  bridge('z',313,spine,16.2,[[-26,2],[190,218],[406,434]]);
-  for(const island of outerLinks)
-    bridge('x',island.z,[[388,2,island.z],[410,6.5,island.z],[458,6.5,island.z],[480,2,island.z]],16.2,[[413,460]]);
+  // Pacifica Bay Bridge (mainland to first island chain) - deck at y=0.01
+  buildHighBridge('x',96,-2,213,0.01,[30.5,213],16.2,9.0,32);
+  // North-south spine bridges connecting islands at centerX=313
+  // Updated for new island positions: jungle(-144), dune(96), snow(336), future(576)
+  buildHighBridge('z',313,-144-94,96-72,1.9,[-48,2],16.2,9.0,32);
+  buildHighBridge('z',313,96+72,336-94,1.9,[190,218],16.2,9.0,32);
+  buildHighBridge('z',313,336+72,576-94,1.9,[406,434],16.2,9.0,32);
+  // East-west bridges to outer islands (centerX=580)
+  buildHighBridge('x',-144,388,580,1.9,[413,460],16.2,9.0,32);
+  buildHighBridge('x',96,388,580,1.9,[413,460],16.2,9.0,32);
+  buildHighBridge('x',336,388,580,1.9,[413,460],16.2,9.0,32);
   for(const i of islands){
     const cx=i.centerX,z=i.z,terrainType=i.id==='snow'?'alpine':i.id,
       city=new T.Group(),solidStart=solids.length,
@@ -361,22 +327,29 @@ function makeInfrastructure(g,solids,asphaltMaterial){
       if(runwayOverlap||apronOverlap)return;
       const facade=n%4===0?masonryMaterial:facadeMaterial,building=new T.Mesh(boxGeo,facade);
       building.position.set(x,height*.5,zz);building.scale.set(width,height,depth);city.add(building);
-      roadBox(city,x,height+.28,zz,width+.42,.56,depth+.42,mat(i.id==='snow'?'#e9f5f8':i.accent));
+      // Rooftop parapet - use masonry PBR material
+      roadBox(city,x,height+.28,zz,width+.42,.56,depth+.42,masonryMaterial);
       for(let floor=2.2;floor<height-1;floor+=3.1){
         for(const side of [-1,1]){
-          roadBox(city,x+side*(width*.5+.025),floor,zz, .05,1.25,depth*.72,mat('#9bcbd0',true));
-          roadBox(city,x,floor,zz+side*(depth*.5+.025),width*.72,1.25,.05,mat('#9bcbd0',true));
+          // Window glazing - use buildingGlass PBR material
+          roadBox(city,x+side*(width*.5+.025),floor,zz, .05,1.25,depth*.72,buildingGlass);
+          roadBox(city,x,floor,zz+side*(depth*.5+.025),width*.72,1.25,.05,buildingGlass);
         }
       }
-      roadBox(city,x,1.28,zz+depth*.5+.055,width*.38,2.55,.09,mat('#365260'));
-      roadBox(city,x,1.38,zz+depth*.5+.11,width*.3,2.25,.05,mat(i.accent,true));
-      roadBox(city,x+width*.29,height+.85,zz,1.7,1.1,1.5,mat('#6a767a'));
-      roadBox(city,x-width*.28,height+.72,zz+depth*.2,1.2,.84,1.1,mat('#768184'));
+      // Ground floor entrance - use facade PBR
+      roadBox(city,x,1.28,zz+depth*.5+.055,width*.38,2.55,.09,facadeMaterial);
+      // Canopy - use masonry PBR
+      roadBox(city,x,1.38,zz+depth*.5+.11,width*.3,2.25,.05,masonryMaterial);
+      // Rooftop mechanical - use facade PBR
+      roadBox(city,x+width*.29,height+.85,zz,1.7,1.1,1.5,facadeMaterial);
+      roadBox(city,x-width*.28,height+.72,zz+depth*.2,1.2,.84,1.1,facadeMaterial);
       const kind=n%5===0?'shop':n%4===0?'business':'home',doorX=x,doorZ=zz+depth*.5+.7;
       solids.push({x,z:zz,w:width*.51,d:depth*.51,h:height+.5,kind,name:`${i.name} ${kind}`,doorX,doorZ,id:`${i.id}-${n}`,variant:n%5});
       if(i.id==='future'||i.id==='obsidian'){
-        roadBox(city,x,height+1.25,zz,.35,2.5,.35,mat(i.accent,true));
-        roadBox(city,x,height*.58,zz+depth*.5+.09,.12,height*.82,.14,mat('#9cf4f1',true));
+        // Spire/antenna - use masonry PBR
+        roadBox(city,x,height+1.25,zz,.35,2.5,.35,masonryMaterial);
+        // Rooftop observation deck - use facade PBR
+        roadBox(city,x,height*.58,zz+depth*.5+.09,.12,height*.82,.14,facadeMaterial);
       }
     };
     let lot=0;const forest=[];
@@ -405,9 +378,11 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     }
     if(i.id==='obsidian'){
       for(const [x,dz,h] of [[-70,-58,30],[-48,48,38],[55,-38,26]]){
-        const vent=new T.Mesh(new T.CylinderGeometry(3.2,5.3,h,12),mat('#30383d'));
+        // Geothermal vent - use masonry PBR for basalt texture
+        const vent=new T.Mesh(new T.CylinderGeometry(3.2,5.3,h,12),masonryMaterial);
         vent.position.set(cx+x,h*.5,z+dz);city.add(vent);
         for(const y of [h*.55,h*.82]){
+          // Glowing ring - keep emissive for effect
           const ring=new T.Mesh(new T.TorusGeometry(3.8,.2,6,16),mat('#ff8750',true));
           ring.position.set(cx+x,y,z+dz);ring.rotation.x=Math.PI/2;city.add(ring);
         }
@@ -418,9 +393,11 @@ function makeInfrastructure(g,solids,asphaltMaterial){
     }
     if(i.id==='atoll'){
       for(const x of [-74,-62,-50]){
-        const dock=roadBox(city,cx+x,1.94,z+62,5.5,.22,23,mat('#b79973'));
+        // Dock decking - use masonry PBR for weathered wood/concrete
+        const dock=roadBox(city,cx+x,1.94,z+62,5.5,.22,23,masonryMaterial);
         dock.rotation.y=0;
-        for(let n=0;n<4;n++)roadBox(city,cx+x-2.2+n*1.45,1.85,z+62,.14,.35,23,mat('#776957'));
+        // Dock pilings - use facade PBR
+        for(let n=0;n<4;n++)roadBox(city,cx+x-2.2+n*1.45,1.85,z+62,.14,.35,23,facadeMaterial);
       }
     }
     addIslandForest(city,forest,i.id);

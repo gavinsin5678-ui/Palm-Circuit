@@ -303,7 +303,7 @@ function makeInfrastructure(g,solids,asphaltMaterial){
       mesh.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3(dx,dy,dz).normalize());
     }else{
       mesh.position.set(x+lateral,y,z+shift);mesh.scale.set(width,thickness,segmentLength);
-      mesh.rotation.x=-pitch;
+      mesh.quaternion.setFromUnitVectors(new T.Vector3(0,0,-1),new T.Vector3(dx,dy,dz).normalize());
     }
     parent.add(mesh);return mesh;
   };

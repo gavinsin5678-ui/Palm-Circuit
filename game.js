@@ -158,7 +158,7 @@ function playerDeath(source){
 }
 function respawnAtGarage(){
   deathTimer=0;state.vehicle='car';state.mode='roam';state.phase='running';state.vitality=100;
-  mobility.playerDeath();resetCar([11,-13,0]);lastMount=null;
+  mobility.playerDeath();resetCar({x:11,z:-13,heading:0,altitude:0});lastMount=null;
   $('death-screen').hidden=true;$('crash').hidden=true;
   document.body.classList.add('playing');syncSelection();snap=true;refresh();
 }
@@ -219,15 +219,18 @@ function select(mode){
 function resetCar(loc=null){
   leaveInterior(false);social.close(false);
   mobility.resetCockpit();
-  const stock=flying()?[runway.x,runway.z,0]:rail()?[13,96,Math.PI/2]:(parking[state.vehicle]??(boating()?boatParking[state.vehicle]??boatParking.hydro:parking.car));
-  const [x,z,h]=loc??stock;
+  const toObj=(v)=>Array.isArray(v)?{x:v[0],z:v[1],heading:v[2]??0,altitude:0}:v;
+  const stock=flying()?{x:runway.x,z:runway.z,heading:0,altitude:0.01}:rail()?{x:13,z:96,heading:Math.PI/2,altitude:0}:toObj(parking[state.vehicle]??(boating()?boatParking[state.vehicle]??boatParking.hydro:parking.car));
+  const spawn=toObj(loc??stock);
+  const x=spawn.x, z=spawn.z, h=spawn.heading, alt=spawn.altitude??0;
   if(boating())boatParking[state.vehicle]=[x,z,h];
   Object.assign(state,{x,z,heading:h,speed:0,vx:0,vz:0,hit:0,steer:0,
     suspension:[0,0,0,0],suspensionVelocity:[0,0,0,0],suspensionY:0,bodyPitch:0,bodyRoll:0,yawSpin:0,sideVelocity:0,tireSlip:0,
     footLean:0,footAcceleration:0,trafficHitCooldown:0,suspensionVehicle:state.vehicle,
-    altitude:flying()?islandSurfaceY(x,z):0,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
+    altitude:alt,throttle:0,pitch:0,bank:0,vertical:0,airborne:false,flightNotice:'',noticeTime:0,swimming:walking()&&!solidLand(x,z)&&dockHeight(x,z)===null,
     crash:null,jump:0,railY:0,ability:0,signal:null,waterLanding:false,depth:0,waterY:waveHeightAt(x,z,simTime),waterVertical:0,
-    vehicleHealth:vehicleMaxHealth(state.vehicle),hijackedAirliner:false,hijackTime:0,hijackBountyTick:0});
+    vehicleHealth:vehicleMaxHealth(state.vehicle),hijackedAirliner:false,hijackTime:0,hijackBountyTick:0,
+    flightSpawnGrace:flying()?1.5:0}); // 1.5s grace period before crash detection
   jumpVelocity=0;
   if(rail()){
     const p=nearestRail(x,z);Object.assign(state,{track:p.track,railY:p.y,x:p.x,z:p.z,heading:p.heading});
@@ -255,12 +258,13 @@ function swapVehicle(){const list=fleet.filter(x=>!prototypeIds.includes(x)||sta
 function swapLocation(id,x,z,yaw,old){
   if(isAir(id)){
     const takeoffHeading=(r,zz)=>zz<(r.min+r.max)*.5?Math.PI:0;
-    const options=runways.map(r=>{const zz=minmax(z,r.min+10,r.max-10);return [r.x,zz,takeoffHeading(r,zz)]});
-    const onRunway=runways.find(r=>Math.abs(x-r.x)<4.4&&z>=r.min+10&&z<=r.max-10);
-    if(onRunway)return [x,z,takeoffHeading(onRunway,z)];
-    return options.sort((a,b)=>Math.hypot(x-a[0],z-a[1])-Math.hypot(x-b[0],z-b[1]))[0];
+    const rw=runways.find(r=>r.id===regionAt(x,z).id)||runways[0];
+    const zz=minmax(z,rw.min+10,rw.max-10);
+    // Runway surface elevation: city.y(1.9) + runway box center(0.16) + half height(0.09) = 2.15
+    const runwaySurfaceY=rw.id==='main'?0.01:2.15;
+    return {x:rw.x,z:zz,heading:takeoffHeading(rw,zz),altitude:runwaySurfaceY+0.25}; // +0.25m gear clearance
   }
-  if(isRail(id)){const p=nearestRail(x,z);return [p.x,p.z,p.heading]}
+  if(isRail(id)){const p=nearestRail(x,z);return {x:p.x,z:p.z,heading:p.heading,altitude:p.y}}
   if(isRail(old)&&state.railY<-1.8){
     const stopsOnRail=stops.filter(s=>s.type==='rail').sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z));
     ({x,z}=stopsOnRail[0]);
@@ -268,17 +272,17 @@ function swapLocation(id,x,z,yaw,old){
   const useWater=isSea(id);
   const valid=(a,b)=>useWater?!solidLand(a,b)&&a>32.6&&dockHeight(a,b)===null:
     id==='walk'?!solidHit(a,b,.5,.36):drivable(a,b)&&roadSurface(a,b)&&!solidHit(a,b,.35,1.42)&&!trafficAt(a,b);
-  if(valid(x,z))return [x,z,yaw];
+  if(valid(x,z))return {x,z,heading:yaw,altitude:0};
   for(let r=1.4;r<=175;r+=r>60?5:1.8){
     const samples=r<12?16:r<65?28:52;
     for(let n=0;n<samples;n++){
       const t=n/samples*Math.PI*2,a=x+Math.cos(t)*r,b=z+Math.sin(t)*r;
-      if(valid(a,b))return [a,b,yaw];
+      if(valid(a,b))return {x:a,z:b,heading:yaw,altitude:0};
     }
   }
-  if(useWater){const i=regionAt(x,z);return i.id==='main'?[Math.max(38,x),z,yaw]:[230,i.z+28,yaw]}
-  if(id==='walk')return [x,z,yaw];
-  return [3.5,Math.round(z/48)*48,yaw];
+  if(useWater){const i=regionAt(x,z);return i.id==='main'?{x:Math.max(38,x),z,heading:yaw,altitude:0}:{x:230,z:i.z+28,heading:yaw,altitude:0}}
+  if(id==='walk')return {x,z,heading:yaw,altitude:0};
+  return {x:3.5,z:Math.round(z/48)*48,heading:yaw,altitude:0};
 }
 function focusView(scroll=true){
   if(scroll&&matchMedia('(max-width: 720px)').matches)window.scrollTo({top:0,behavior:'instant'});
@@ -298,18 +302,18 @@ function driveTransitVehicle(id,stop,destination){
   if(!variant(id))return false;
   const heading=Math.atan2(destination.x-stop.x,stop.z-destination.z);
   const x=variant(id).kind==='boat'?(stop.region==='main'?43:222):stop.x;
-  const [px,pz,yaw]=swapLocation(id,x,stop.z,heading,'walk');
+  const spawn=swapLocation(id,x,stop.z,heading,'walk');
   mobility.close(false);lastMount=null;state.vehicle=id;state.mode='roam';state.phase='running';state.camera=0;
-  state.checkpoint=0;state.time=0;state.hits=0;resetCar([px,pz,yaw]);
+  state.checkpoint=0;state.time=0;state.hits=0;resetCar(spawn);
   document.body.classList.add('playing');syncSelection();focusView();refresh();
   return true;
 }
 function takeoverAircraft(pose){
   leaveInterior(false);mobility.resetCockpit();
   Object.assign(state,{vehicle:'plane',mode:'roam',phase:'running',x:pose.x,z:pose.z,heading:pose.heading,
-    speed:0,vx:0,vz:0,altitude:0,vertical:0,throttle:0,pitch:0,bank:0,airborne:false,
+    speed:0,vx:0,vz:0,altitude:pose.y??2.15,vertical:0,throttle:0,pitch:0,bank:0,airborne:false,
     vehicleHealth:vehicleMaxHealth('plane'),hijackedAirliner:true,hijackTime:0,hijackBountyTick:0,
-    crash:null,signal:null,swimming:false});
+    crash:null,signal:null,swimming:false,flightSpawnGrace:1.5});
   clearKeys();document.body.classList.add('playing');$('crash').hidden=true;
   syncSelection();snap=true;focusView(false);social.notice('Flight deck seized · Take off and evade the response.');
   refresh();
@@ -486,7 +490,8 @@ function leaveVenue(){leaveInterior(true);clearKeys();focusView(false);refresh()
 function goRunway(stop,id='plane',west=false){
   leaveInterior(false);state.vehicle=id;
   const r=west&&stop.region==='main'?runwayWest:runways.find(x=>x.id===stop.region)??runways[0];
-  resetCar([r.x,r.z,0]);state.phase='running';state.mode='roam';syncSelection();focusView(false);refresh();
+  const runwaySurfaceY=r.id==='main'?0.01:2.15;
+  resetCar({x:r.x,z:r.z,heading:0,altitude:runwaySurfaceY+0.25});state.phase='running';state.mode='roam';syncSelection();focusView(false);refresh();
 }
 function nearestBoard(){
   if(indoor)return null;
@@ -626,6 +631,7 @@ function damageVehicle(impactSpeed,message){
 }
 function updatePlane(dt){
   if(state.noticeTime>0){state.noticeTime-=dt;if(state.noticeTime<=0)state.flightNotice=''}
+  if(state.flightSpawnGrace>0){state.flightSpawnGrace-=dt}
   const air=state.airborne, arrowShift=shift(), up=keys.has('ArrowUp'),down=keys.has('ArrowDown'),p=variant(state.vehicle);
   const brake=action('Space')||(!air&&down&&!arrowShift);
   const throttle=Number(action('KeyW')||(up&&(arrowShift||!air)))-Number(action('KeyS')||(down&&(arrowShift||!air)));
@@ -660,19 +666,20 @@ function updatePlane(dt){
   let y=Math.min(395,state.altitude+state.vertical*dt);
   state.vx=Math.sin(state.heading)*state.speed*Math.cos(state.pitch);state.vz=-Math.cos(state.heading)*state.speed*Math.cos(state.pitch);
   const x=state.x+state.vx*dt,z=state.z+state.vz*dt;
+  const grace=state.flightSpawnGrace>0;
   if(solidHit(x,z,y+1.05,air?2.7:2.35)){
-    if(air||state.speed>14){flightCrash('Collision with a building',x,z,y,false);return}
+    if(!grace&&(air||state.speed>14)){flightCrash('Collision with a building',x,z,y,false);return}
     state.speed=0;return;
   }
   if(y<=0&&air){
     const wet=!solidLand(x,z);
     const floats=wet&&ability('floats')&&state.speed<45&&state.vertical>-5&&Math.abs(state.bank)<.28;
-    if(wet&&!floats||state.speed>47||state.vertical<-7||Math.abs(state.bank)>.42){flightCrash(wet?'Water impact':'Hard landing',x,z,y,wet);return}
+    if(!grace&&(wet&&!floats||state.speed>47||state.vertical<-7||Math.abs(state.bank)>.42)){flightCrash(wet?'Water impact':'Hard landing',x,z,y,wet);return}
     state.waterLanding=floats;
     state.vertical=0;state.bank=0;state.pitch=0;state.throttle=0;
     state.flightNotice='Touchdown';state.noticeTime=4.2;
   }
-  if(y<=0&&!solidLand(x,z)&&!state.waterLanding){flightCrash('Water impact',x,z,y,true);return}
+  if(!grace&&y<=0&&!solidLand(x,z)&&!state.waterLanding){flightCrash('Water impact',x,z,y,true);return}
   if(solidLand(x,z))state.waterLanding=false;
   state.x=x;state.z=z;state.altitude=Math.max(0,y);state.airborne=y>.025||(air&&y>0);
 }

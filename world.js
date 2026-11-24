@@ -199,7 +199,12 @@ function terrainGrid(parent,x,z,w,d,cols,rows,mode,baseY,offsetX=x,offsetZ=z,fla
       const centralIsland=Math.abs(offsetX-313)<1,
         bridgeApproach=centralIsland&&Math.abs(gx-offsetX)<=9&&Math.abs(gz-offsetZ)>=72&&Math.abs(gz-offsetZ)<=94,
         westBridgeApproach=centralIsland&&Math.abs(gz-offsetZ)<=9&&gx>=offsetX-100&&gx<=offsetX-78;
+      // Road corridor bounds for this island (matching addOrthogonalRoadGrid)
+      const roadXLines=[-80,-40,0,40,80].map(o=>offsetX+o);
+      const roadZLines=[-72,-36,0,36,72].map(o=>offsetZ+o);
+      const onIslandRoad=roadXLines.some(rx=>Math.abs(gx-rx)<=7.5) || roadZLines.some(rz=>Math.abs(gz-rz)<=6.7);
       height=urban||bridgeApproach||westBridgeApproach?1.9:1.9*fade+Math.max(0,height)*fade-1.9;
+      if(onIslandRoad) height=1.9; // Flatten terrain under roads to prevent grass overlap
       if(mode==='island-dune'&&Math.abs(gz-offsetZ)<=7.4&&gx>=offsetX-100&&gx<=offsetX-80)
         height=-.10+(gx-(offsetX-100))/20*1.99;
     }
@@ -389,10 +394,9 @@ export function addOrthogonalRoadGrid(parent,{
       add('asphalt',axis==='x'?line:center,roadY-.09,axis==='x'?center:line,
         axis==='x'?width:length,.18,axis==='x'?length:width,asphaltMaterial);
       for(const side of [-1,1]){
-        add('curb',axis==='x'?line+side*(half+.12):center,roadY-.015,
-          axis==='x'?center:line+side*(half+.12),axis==='x'?.24:length,.13,axis==='x'?length:.24,materials.curb);
-        add('sidewalk',axis==='x'?line+side*(half+1.02):center,roadY-.015,
-          axis==='x'?center:line+side*(half+1.02),axis==='x'?1.56:length,.09,axis==='x'?length:1.56,materials.sidewalk);
+        // Thin realistic road edge line (<=0.15m wide) flush on asphalt surface
+        add('edgeLine',axis==='x'?line+side*(half+.02):center,roadY+.01,
+          axis==='x'?center:line+side*(half+.02),axis==='x'?.12:length,.03,axis==='x'?length:.12,materials.white);
       }
       const dashed=(lateral,color,width,dash,gap)=>{
         const pitch=dash+gap;
